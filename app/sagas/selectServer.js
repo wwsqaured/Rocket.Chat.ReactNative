@@ -81,6 +81,11 @@ const handleSelectServer = function* handleSelectServer({ server, version, fetch
 			}
 		}
 
+		let serverInfo;
+		if (fetchVersion) {
+			serverInfo = yield getServerInfo({ server, raiseError: false });
+		}
+
 		if (user) {
 			yield RocketChat.connect({ server, user });
 			yield put(setUser(user));
@@ -103,11 +108,6 @@ const handleSelectServer = function* handleSelectServer({ server, version, fetch
 		yield put(actions.setAllSettings(RocketChat.parseSettings(settings.slice(0, settings.length))));
 
 		yield RocketChat.setCustomEmojis();
-
-		let serverInfo;
-		if (fetchVersion) {
-			serverInfo = yield getServerInfo({ server, raiseError: false });
-		}
 
 		// Return server version even when offline
 		yield put(selectServerSuccess(server, (serverInfo && serverInfo.version) || version));

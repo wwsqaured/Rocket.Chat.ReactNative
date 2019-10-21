@@ -973,10 +973,13 @@ const RocketChat = {
 	},
 	getUserPresence() {
 		return new Promise(async(resolve) => {
-			const serverVersion = reduxStore.getState().server.version;
+			const { server } = reduxStore.getState().server;
+			const serversDB = database.servers;
+			const serversCollection = serversDB.collections.get('servers');
+			const serverInfo = await serversCollection.find(server);
 
 			// if server is lower than 1.1.0
-			if (semver.lt(semver.coerce(serverVersion), '1.1.0')) {
+			if (semver.lt(semver.coerce(serverInfo.version), '1.1.0')) {
 				if (this.activeUsersSubTimeout) {
 					clearTimeout(this.activeUsersSubTimeout);
 					this.activeUsersSubTimeout = false;

@@ -84,14 +84,18 @@ export async function setCustomEmojis() {
 export function getCustomEmojis() {
 	return new Promise(async(resolve) => {
 		try {
-			const serverVersion = reduxStore.getState().server.version;
+			const { server } = reduxStore.getState().server;
+			const serversDB = database.servers;
+			const serversCollection = serversDB.collections.get('servers');
+			const serverInfo = await serversCollection.find(server);
+
 			const db = database.active;
 			const emojisCollection = db.collections.get('custom_emojis');
 			const allRecords = await emojisCollection.query().fetch();
 			const updatedSince = await getUpdatedSince(allRecords);
 
 			// if server version is lower than 0.75.0, fetches from old api
-			if (semver.lt(serverVersion, '0.75.0')) {
+			if (semver.lt(serverInfo.version, '0.75.0')) {
 				// RC 0.61.0
 				const result = await this.sdk.get('emoji-custom');
 

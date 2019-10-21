@@ -73,13 +73,17 @@ const updatePermissions = async({ update = [], remove = [], allRecords }) => {
 export default function() {
 	return new Promise(async(resolve) => {
 		try {
-			const serverVersion = reduxStore.getState().server.version;
+			const { server } = reduxStore.getState().server;
+			const serversDB = database.servers;
+			const serversCollection = serversDB.collections.get('servers');
+			const serverInfo = await serversCollection.find(server);
+
 			const db = database.active;
 			const permissionsCollection = db.collections.get('permissions');
 			const allRecords = await permissionsCollection.query().fetch();
 
 			// if server version is lower than 0.73.0, fetches from old api
-			if (semver.lt(serverVersion, '0.73.0')) {
+			if (semver.lt(serverInfo.version, '0.73.0')) {
 				// RC 0.66.0
 				const result = await this.sdk.get('permissions.list');
 				if (!result.success) {
