@@ -26,6 +26,11 @@ export default function server(state = initialState, action) {
 				connected: false,
 				failure: true
 			};
+		case SERVER.SET_VERSION:
+			return {
+				...state,
+				version: action.version
+			};
 		case SERVER.SELECT_REQUEST:
 			return {
 				...state,
@@ -39,7 +44,6 @@ export default function server(state = initialState, action) {
 			return {
 				...state,
 				server: action.server,
-				version: action.version,
 				connecting: false,
 				connected: true,
 				loading: false

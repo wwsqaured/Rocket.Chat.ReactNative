@@ -40,6 +40,7 @@ export const SERVER = createRequestTypes('SERVER', [
 	'SELECT_SUCCESS',
 	'SELECT_REQUEST',
 	'SELECT_FAILURE',
+	'SET_VERSION',
 	'INIT_ADD',
 	'FINISH_ADD'
 ]);

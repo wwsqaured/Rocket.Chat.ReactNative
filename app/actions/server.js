@@ -1,5 +1,12 @@
 import { SERVER } from './actionsTypes';
 
+export function setVersion(version) {
+	return {
+		type: SERVER.SET_VERSION,
+		version
+	};
+}
+
 export function selectServerRequest(server, version, fetchVersion = true) {
 	return {
 		type: SERVER.SELECT_REQUEST,
@@ -9,11 +16,10 @@ export function selectServerRequest(server, version, fetchVersion = true) {
 	};
 }
 
-export function selectServerSuccess(server, version) {
+export function selectServerSuccess(server) {
 	return {
 		type: SERVER.SELECT_SUCCESS,
-		server,
-		version
+		server
 	};
 }
 

@@ -9,7 +9,7 @@ import Navigation from '../lib/Navigation';
 import { SERVER } from '../actions/actionsTypes';
 import * as actions from '../actions';
 import {
-	serverFailure, selectServerRequest, selectServerSuccess, selectServerFailure
+	setVersion, serverFailure, selectServerRequest, selectServerSuccess, selectServerFailure
 } from '../actions/server';
 import { setUser } from '../actions/login';
 import RocketChat from '../lib/rocketchat';
@@ -85,6 +85,7 @@ const handleSelectServer = function* handleSelectServer({ server, version, fetch
 		if (fetchVersion) {
 			serverInfo = yield getServerInfo({ server, raiseError: false });
 		}
+		yield put(setVersion((serverInfo && serverInfo.version) || version));
 
 		if (user) {
 			yield RocketChat.connect({ server, user });
@@ -110,7 +111,7 @@ const handleSelectServer = function* handleSelectServer({ server, version, fetch
 		yield RocketChat.setCustomEmojis();
 
 		// Return server version even when offline
-		yield put(selectServerSuccess(server, (serverInfo && serverInfo.version) || version));
+		yield put(selectServerSuccess(server));
 	} catch (e) {
 		yield put(selectServerFailure());
 		log(e);
