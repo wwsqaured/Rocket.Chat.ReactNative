@@ -9,12 +9,6 @@ export default StyleSheet.create({
 	safeAreaView: {
 		flex: 1
 	},
-	list: {
-		flex: 1
-	},
-	contentContainer: {
-		paddingTop: 10
-	},
 	readOnly: {
 		justifyContent: 'flex-end',
 		alignItems: 'center',
@@ -24,6 +18,30 @@ export default StyleSheet.create({
 		borderRadius: 4,
 		flexDirection: 'column',
 		overflow: 'hidden'
+	},
+	bannerContainer: {
+		paddingVertical: 12,
+		paddingHorizontal: 15,
+		flexDirection: 'row',
+		alignItems: 'center'
+	},
+	bannerText: {
+		flex: 1
+	},
+	bannerModalTitle: {
+		fontSize: 16,
+		...sharedStyles.textMedium
+	},
+	modalView: {
+		padding: 20,
+		justifyContent: 'center'
+	},
+	modalScrollView: {
+		maxHeight: 100,
+		marginVertical: 20
+	},
+	modalCloseButton: {
+		alignSelf: 'flex-end'
 	},
 	joinRoomContainer: {
 		justifyContent: 'flex-end',

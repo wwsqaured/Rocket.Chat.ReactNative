@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import PropTypes from 'prop-types';
 import { View } from 'react-native';
 import Touchable from 'react-native-platform-touchable';
+
+import MessageContext from './Context';
 
 import User from './User';
 import styles from './styles';
@@ -10,12 +12,14 @@ import MessageAvatar from './MessageAvatar';
 import Attachments from './Attachments';
 import Urls from './Urls';
 import Thread from './Thread';
+import Blocks from './Blocks';
 import Reactions from './Reactions';
 import Broadcast from './Broadcast';
 import Discussion from './Discussion';
 import Content from './Content';
 import ReadReceipt from './ReadReceipt';
 import CallButton from './CallButton';
+import { themes } from '../../constants/colors';
 
 const MessageInner = React.memo((props) => {
 	if (props.type === 'discussion-created') {
@@ -35,6 +39,16 @@ const MessageInner = React.memo((props) => {
 			</>
 		);
 	}
+	if (props.blocks && props.blocks.length) {
+		return (
+			<>
+				<User {...props} />
+				<Blocks {...props} />
+				<Thread {...props} />
+				<Reactions {...props} />
+			</>
+		);
+	}
 	return (
 		<>
 			<User {...props} />
@@ -50,12 +64,12 @@ const MessageInner = React.memo((props) => {
 MessageInner.displayName = 'MessageInner';
 
 const Message = React.memo((props) => {
-	if (props.isThreadReply || props.isThreadSequential || props.isInfo) {
+	if (props.isThreadReply || props.isThreadSequential || props.isInfo || props.isIgnored) {
 		const thread = props.isThreadReply ? <RepliedThread {...props} /> : null;
 		return (
 			<View style={[styles.container, props.style]}>
 				{thread}
-				<View style={[styles.flex, styles.center]}>
+				<View style={styles.flex}>
 					<MessageAvatar small {...props} />
 					<View
 						style={[
@@ -69,6 +83,7 @@ const Message = React.memo((props) => {
 			</View>
 		);
 	}
+
 	return (
 		<View style={[styles.container, props.style]}>
 			<View style={styles.flex}>
@@ -100,11 +115,13 @@ const MessageTouchable = React.memo((props) => {
 			</View>
 		);
 	}
+	const { onPress, onLongPress } = useContext(MessageContext);
 	return (
 		<Touchable
-			onLongPress={props.onLongPress}
-			onPress={props.onPress}
-			disabled={props.isInfo || props.archived || props.isTemp}
+			onLongPress={onLongPress}
+			onPress={onPress}
+			disabled={(props.isInfo && !props.isThreadReply) || props.archived || props.isTemp}
+			style={{ backgroundColor: props.highlighted ? themes[props.theme].headerBackground : null }}
 		>
 			<View>
 				<Message {...props} />
@@ -117,10 +134,11 @@ MessageTouchable.displayName = 'MessageTouchable';
 MessageTouchable.propTypes = {
 	hasError: PropTypes.bool,
 	isInfo: PropTypes.bool,
+	isThreadReply: PropTypes.bool,
 	isTemp: PropTypes.bool,
 	archived: PropTypes.bool,
-	onLongPress: PropTypes.func,
-	onPress: PropTypes.func
+	highlighted: PropTypes.bool,
+	theme: PropTypes.string
 };
 
 Message.propTypes = {
@@ -132,14 +150,15 @@ Message.propTypes = {
 	hasError: PropTypes.bool,
 	style: PropTypes.any,
 	onLongPress: PropTypes.func,
-	onPress: PropTypes.func,
 	isReadReceiptEnabled: PropTypes.bool,
 	unread: PropTypes.bool,
-	theme: PropTypes.string
+	theme: PropTypes.string,
+	isIgnored: PropTypes.bool
 };
 
 MessageInner.propTypes = {
-	type: PropTypes.string
+	type: PropTypes.string,
+	blocks: PropTypes.array
 };
 
 export default MessageTouchable;

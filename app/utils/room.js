@@ -1,17 +1,7 @@
 import moment from 'moment';
+import { themes } from '../constants/colors';
 
 import I18n from '../i18n';
-
-export const isOwner = room => room && room.roles && room.roles.length && !!room.roles.find(role => role === 'owner');
-
-export const isMuted = (room, user) => room && room.muted && room.muted.find && !!room.muted.find(m => m === user.username);
-
-export const isReadOnly = (room, user) => {
-	if (isOwner(room)) {
-		return false;
-	}
-	return (room && room.ro) || isMuted(room, user);
-};
 
 export const isBlocked = (room) => {
 	if (room) {
@@ -32,5 +22,28 @@ export const formatDate = date => moment(date).calendar(null, {
 	lastDay: `[${ I18n.t('Yesterday') }]`,
 	sameDay: 'LT',
 	lastWeek: 'dddd',
-	sameElse: 'MMM D'
+	sameElse: 'L'
 });
+
+export const formatDateThreads = date => moment(date).calendar(null, {
+	sameDay: 'LT',
+	lastDay: `[${ I18n.t('Yesterday') }] LT`,
+	lastWeek: 'dddd LT',
+	sameElse: 'LL'
+});
+
+export const getBadgeColor = ({ subscription, messageId, theme }) => {
+	if (subscription?.tunreadUser?.includes(messageId)) {
+		return themes[theme].mentionMeColor;
+	}
+	if (subscription?.tunreadGroup?.includes(messageId)) {
+		return themes[theme].mentionGroupColor;
+	}
+	if (subscription?.tunread?.includes(messageId)) {
+		return themes[theme].tunreadColor;
+	}
+};
+
+export const makeThreadName = messageRecord => messageRecord.msg || messageRecord?.attachments[0]?.title;
+
+export const isTeamRoom = ({ teamId, joined }) => teamId && joined;

@@ -5,8 +5,10 @@ import {
 
 import { sanitizer } from '../utils';
 
+export const TABLE_NAME = 'messages';
+
 export default class Message extends Model {
-	static table = 'messages';
+	static table = TABLE_NAME;
 
 	static associations = {
 		subscriptions: { type: 'belongs_to', key: 'rid' }
@@ -29,6 +31,8 @@ export default class Message extends Model {
 	@field('groupable') groupable;
 
 	@field('avatar') avatar;
+
+	@field('emoji') emoji;
 
 	@json('attachments', sanitizer) attachments;
 
@@ -73,4 +77,10 @@ export default class Message extends Model {
 	@json('translations', sanitizer) translations;
 
 	@field('tmsg') tmsg;
+
+	@json('blocks', sanitizer) blocks;
+
+	@field('e2e') e2e;
+
+	@field('tshow') tshow;
 }

@@ -1,104 +1,78 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { View, StyleSheet, FlatList } from 'react-native';
+import { View, FlatList } from 'react-native';
 import { connect } from 'react-redux';
-import { SafeAreaView } from 'react-navigation';
-import equal from 'deep-equal';
-import { orderBy } from 'lodash';
+import orderBy from 'lodash/orderBy';
 import { Q } from '@nozbe/watermelondb';
+import * as List from '../containers/List';
 
-import {
-	addUser as addUserAction, removeUser as removeUserAction, reset as resetAction, setLoading as setLoadingAction
-} from '../actions/selectedUsers';
 import database from '../lib/database';
 import RocketChat from '../lib/rocketchat';
 import UserItem from '../presentation/UserItem';
 import Loading from '../containers/Loading';
-import debounce from '../utils/debounce';
 import I18n from '../i18n';
-import log from '../utils/log';
+import log, { logEvent, events } from '../utils/log';
 import SearchBox from '../containers/SearchBox';
 import sharedStyles from './Styles';
-import { Item, CustomHeaderButtons } from '../containers/HeaderButton';
+import * as HeaderButton from '../containers/HeaderButton';
 import StatusBar from '../containers/StatusBar';
 import { themes } from '../constants/colors';
-import { animateNextTransition } from '../utils/layoutAnimation';
 import { withTheme } from '../theme';
-import { themedHeader } from '../utils/navigation';
+import { getUserSelector } from '../selectors/login';
+import {
+	reset as resetAction,
+	addUser as addUserAction,
+	removeUser as removeUserAction
+} from '../actions/selectedUsers';
+import { showErrorAlert } from '../utils/info';
+import SafeAreaView from '../containers/SafeAreaView';
 
-const styles = StyleSheet.create({
-	safeAreaView: {
-		flex: 1
-	},
-	separator: {
-		marginLeft: 60
-	}
-});
+const ITEM_WIDTH = 250;
+const getItemLayout = (_, index) => ({ length: ITEM_WIDTH, offset: ITEM_WIDTH * index, index });
 
 class SelectedUsersView extends React.Component {
-	static navigationOptions = ({ navigation, screenProps }) => {
-		const title = navigation.getParam('title');
-		const nextAction = navigation.getParam('nextAction', () => {});
-		return {
-			...themedHeader(screenProps.theme),
-			title,
-			headerRight: (
-				<CustomHeaderButtons>
-					<Item title={I18n.t('Next')} onPress={nextAction} testID='selected-users-view-submit' />
-				</CustomHeaderButtons>
-			)
-		};
-	}
-
 	static propTypes = {
-		navigation: PropTypes.object,
 		baseUrl: PropTypes.string,
 		addUser: PropTypes.func.isRequired,
 		removeUser: PropTypes.func.isRequired,
 		reset: PropTypes.func.isRequired,
 		users: PropTypes.array,
 		loading: PropTypes.bool,
-		setLoadingInvite: PropTypes.func,
 		user: PropTypes.shape({
 			id: PropTypes.string,
-			token: PropTypes.string
+			token: PropTypes.string,
+			username: PropTypes.string,
+			name: PropTypes.string
 		}),
+		navigation: PropTypes.object,
+		route: PropTypes.object,
 		theme: PropTypes.string
 	};
 
 	constructor(props) {
 		super(props);
 		this.init();
+		this.flatlist = React.createRef();
+		const maxUsers = props.route.params?.maxUsers;
 		this.state = {
+			maxUsers,
 			search: [],
 			chats: []
 		};
+		const { user } = this.props;
+		if (this.isGroupChat()) {
+			props.addUser({ _id: user.id, name: user.username, fname: user.name });
+		}
+		this.setHeader(props.route.params?.showButton);
 	}
 
-	componentDidMount() {
-		const { navigation } = this.props;
-		navigation.setParams({ nextAction: this.nextAction });
-	}
-
-	shouldComponentUpdate(nextProps, nextState) {
-		const { search, chats } = this.state;
-		const { users, loading, theme } = this.props;
-		if (nextProps.theme !== theme) {
-			return true;
+	componentDidUpdate(prevProps) {
+		if (this.isGroupChat()) {
+			const { users } = this.props;
+			if (prevProps.users.length !== users.length) {
+				this.setHeader(users.length > 0);
+			}
 		}
-		if (nextProps.loading !== loading) {
-			return true;
-		}
-		if (!equal(nextProps.users, users)) {
-			return true;
-		}
-		if (!equal(nextState.search, search)) {
-			return true;
-		}
-		if (!equal(nextState.chats, chats)) {
-			return true;
-		}
-		return false;
 	}
 
 	componentWillUnmount() {
@@ -107,6 +81,26 @@ class SelectedUsersView extends React.Component {
 		if (this.querySubscription && this.querySubscription.unsubscribe) {
 			this.querySubscription.unsubscribe();
 		}
+	}
+
+	// showButton can be sent as route params or updated by the component
+	setHeader = (showButton) => {
+		const { navigation, route } = this.props;
+		const title = route.params?.title ?? I18n.t('Select_Users');
+		const buttonText = route.params?.buttonText ?? I18n.t('Next');
+		const maxUsers = route.params?.maxUsers;
+		const nextAction = route.params?.nextAction ?? (() => {});
+		const options = {
+			title,
+			headerRight: () => (
+				(!maxUsers || showButton) && (
+					<HeaderButton.Container>
+						<HeaderButton.Item title={buttonText} onPress={nextAction} testID='selected-users-view-submit' />
+					</HeaderButton.Container>
+				)
+			)
+		};
+		navigation.setOptions(options);
 	}
 
 	// eslint-disable-next-line react/sort-comp
@@ -131,35 +125,16 @@ class SelectedUsersView extends React.Component {
 		this.search(text);
 	}
 
-	nextAction = async() => {
-		const { navigation, setLoadingInvite } = this.props;
-		const nextActionID = navigation.getParam('nextActionID');
-		if (nextActionID === 'CREATE_CHANNEL') {
-			navigation.navigate('CreateChannelView');
-		} else {
-			const rid = navigation.getParam('rid');
-			try {
-				setLoadingInvite(true);
-				await RocketChat.addUsersToRoom(rid);
-				navigation.pop();
-			} catch (e) {
-				log(e);
-			} finally {
-				setLoadingInvite(false);
-			}
-		}
-	}
-
-	// eslint-disable-next-line react/sort-comp
-	updateState = debounce(() => {
-		this.forceUpdate();
-	}, 1000);
-
 	search = async(text) => {
 		const result = await RocketChat.search({ text, filterRooms: false });
 		this.setState({
 			search: result
 		});
+	}
+
+	isGroupChat = () => {
+		const { maxUsers } = this.state;
+		return maxUsers > 2;
 	}
 
 	isChecked = (username) => {
@@ -168,12 +143,24 @@ class SelectedUsersView extends React.Component {
 	}
 
 	toggleUser = (user) => {
-		const { addUser, removeUser } = this.props;
+		const { maxUsers } = this.state;
+		const {
+			addUser, removeUser, users, user: { username }
+		} = this.props;
 
-		animateNextTransition();
+		// Disallow removing self user from the direct message group
+		if (this.isGroupChat() && username === user.name) {
+			return;
+		}
+
 		if (!this.isChecked(user.name)) {
+			if (this.isGroupChat() && users.length === maxUsers) {
+				return showErrorAlert(I18n.t('Max_number_of_users_allowed_is_number', { maxUsers }), I18n.t('Oops'));
+			}
+			logEvent(events.SELECTED_USERS_ADD_USER);
 			addUser(user);
 		} else {
+			logEvent(events.SELECTED_USERS_REMOVE_USER);
 			removeUser(user);
 		}
 	}
@@ -198,15 +185,23 @@ class SelectedUsersView extends React.Component {
 		);
 	}
 
+	setFlatListRef = ref => this.flatlist = ref;
+
+	onContentSizeChange = () => this.flatlist.scrollToEnd({ animated: true });
+
 	renderSelected = () => {
 		const { users, theme } = this.props;
 
 		if (users.length === 0) {
 			return null;
 		}
+
 		return (
 			<FlatList
 				data={users}
+				ref={this.setFlatListRef}
+				onContentSizeChange={this.onContentSizeChange}
+				getItemLayout={getItemLayout}
 				keyExtractor={item => item._id}
 				style={[sharedStyles.separatorTop, { borderColor: themes[theme].separatorColor }]}
 				contentContainerStyle={{ marginVertical: 5 }}
@@ -232,11 +227,6 @@ class SelectedUsersView extends React.Component {
 				theme={theme}
 			/>
 		);
-	}
-
-	renderSeparator = () => {
-		const { theme } = this.props;
-		return <View style={[sharedStyles.separator, styles.separator, { backgroundColor: themes[theme].separatorColor }]} />;
 	}
 
 	renderItem = ({ item, index }) => {
@@ -273,13 +263,18 @@ class SelectedUsersView extends React.Component {
 	renderList = () => {
 		const { search, chats } = this.state;
 		const { theme } = this.props;
+
+		const data = (search.length > 0 ? search : chats)
+			// filter DM between multiple users
+			.filter(sub => !RocketChat.isGroupChat(sub));
+
 		return (
 			<FlatList
-				data={search.length > 0 ? search : chats}
+				data={data}
 				extraData={this.props}
 				keyExtractor={item => item._id}
 				renderItem={this.renderItem}
-				ItemSeparatorComponent={this.renderSeparator}
+				ItemSeparatorComponent={List.Separator}
 				ListHeaderComponent={this.renderHeader}
 				contentContainerStyle={{ backgroundColor: themes[theme].backgroundColor }}
 				enableEmptySections
@@ -289,14 +284,10 @@ class SelectedUsersView extends React.Component {
 	}
 
 	render = () => {
-		const { loading, theme } = this.props;
+		const { loading } = this.props;
 		return (
-			<SafeAreaView
-				style={[styles.safeAreaView, { backgroundColor: themes[theme].auxiliaryBackground }]}
-				forceInset={{ vertical: 'never' }}
-				testID='select-users-view'
-			>
-				<StatusBar theme={theme} />
+			<SafeAreaView testID='select-users-view'>
+				<StatusBar />
 				{this.renderList()}
 				<Loading visible={loading} />
 			</SafeAreaView>
@@ -305,20 +296,16 @@ class SelectedUsersView extends React.Component {
 }
 
 const mapStateToProps = state => ({
-	baseUrl: state.settings.Site_Url || state.server ? state.server.server : '',
+	baseUrl: state.server.server,
 	users: state.selectedUsers.users,
 	loading: state.selectedUsers.loading,
-	user: {
-		id: state.login.user && state.login.user.id,
-		token: state.login.user && state.login.user.token
-	}
+	user: getUserSelector(state)
 });
 
 const mapDispatchToProps = dispatch => ({
 	addUser: user => dispatch(addUserAction(user)),
 	removeUser: user => dispatch(removeUserAction(user)),
-	reset: () => dispatch(resetAction()),
-	setLoadingInvite: loading => dispatch(setLoadingAction(loading))
+	reset: () => dispatch(resetAction())
 });
 
 export default connect(mapStateToProps, mapDispatchToProps)(withTheme(SelectedUsersView));

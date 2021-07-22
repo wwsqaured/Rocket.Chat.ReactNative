@@ -1,28 +1,31 @@
 import React, { Component } from 'react';
 import {
-	View, Text, Animated, Easing, TouchableWithoutFeedback, TouchableOpacity, FlatList, Image
+	View, Text, Animated, Easing, TouchableWithoutFeedback, TouchableOpacity, FlatList
 } from 'react-native';
 import PropTypes from 'prop-types';
-import { connect } from 'react-redux';
-import equal from 'deep-equal';
-import { withNavigation } from 'react-navigation';
-import RNUserDefaults from 'rn-user-defaults';
+import { connect, batch } from 'react-redux';
+import { withSafeAreaInsets } from 'react-native-safe-area-context';
+import * as List from '../../containers/List';
 
 import { toggleServerDropdown as toggleServerDropdownAction } from '../../actions/rooms';
-import { selectServerRequest as selectServerRequestAction } from '../../actions/server';
-import { appStart as appStartAction } from '../../actions';
+import { selectServerRequest as selectServerRequestAction, serverInitAdd as serverInitAddAction } from '../../actions/server';
+import { appStart as appStartAction, ROOT_NEW_SERVER } from '../../actions/app';
 import styles from './styles';
-import Touch from '../../utils/touch';
 import RocketChat from '../../lib/rocketchat';
 import I18n from '../../i18n';
 import EventEmitter from '../../utils/events';
-import Check from '../../containers/Check';
+import ServerItem from '../../presentation/ServerItem';
 import database from '../../lib/database';
 import { themes } from '../../constants/colors';
 import { withTheme } from '../../theme';
 import { KEY_COMMAND, handleCommandSelectServer } from '../../commands';
 import { isTablet } from '../../utils/deviceInfo';
-import { withSplit } from '../../split';
+import { localAuthenticate } from '../../utils/localAuthentication';
+import { showConfirmationAlert } from '../../utils/info';
+import { logEvent, events } from '../../utils/log';
+import { headerHeight } from '../../containers/Header';
+import { goRoom } from '../../utils/goRoom';
+import UserPreferences from '../../lib/userPreferences';
 
 const ROW_HEIGHT = 68;
 const ANIMATION_DURATION = 200;
@@ -30,13 +33,15 @@ const ANIMATION_DURATION = 200;
 class ServerDropdown extends Component {
 	static propTypes = {
 		navigation: PropTypes.object,
+		insets: PropTypes.object,
 		closeServerDropdown: PropTypes.bool,
-		split: PropTypes.bool,
 		server: PropTypes.string,
 		theme: PropTypes.string,
+		isMasterDetail: PropTypes.bool,
+		appStart: PropTypes.func,
 		toggleServerDropdown: PropTypes.func,
 		selectServerRequest: PropTypes.func,
-		appStart: PropTypes.func
+		initAdd: PropTypes.func
 	}
 
 	constructor(props) {
@@ -68,24 +73,6 @@ class ServerDropdown extends Component {
 		if (isTablet) {
 			EventEmitter.addEventListener(KEY_COMMAND, this.handleCommands);
 		}
-	}
-
-	shouldComponentUpdate(nextProps, nextState) {
-		const { servers } = this.state;
-		const { closeServerDropdown, server, theme } = this.props;
-		if (nextProps.theme !== theme) {
-			return true;
-		}
-		if (nextProps.closeServerDropdown !== closeServerDropdown) {
-			return true;
-		}
-		if (nextProps.server !== server) {
-			return true;
-		}
-		if (!equal(nextState.servers, servers)) {
-			return true;
-		}
-		return false;
 	}
 
 	componentDidUpdate(prevProps) {
@@ -121,36 +108,60 @@ class ServerDropdown extends Component {
 		).start(() => toggleServerDropdown());
 	}
 
-	addServer = () => {
-		const { server, navigation } = this.props;
+	navToNewServer = (previousServer) => {
+		const { appStart, initAdd } = this.props;
+		batch(() => {
+			appStart({ root: ROOT_NEW_SERVER });
+			initAdd(previousServer);
+		});
+	}
 
+	addServer = () => {
+		logEvent(events.RL_ADD_SERVER);
+		const { server } = this.props;
 		this.close();
 		setTimeout(() => {
-			navigation.navigate('OnboardingView', { previousServer: server });
+			this.navToNewServer(server);
 		}, ANIMATION_DURATION);
 	}
 
-	select = async(server) => {
+	select = async(server, version) => {
 		const {
-			server: currentServer, selectServerRequest, appStart, navigation, split
+			server: currentServer, selectServerRequest, isMasterDetail
 		} = this.props;
-
 		this.close();
 		if (currentServer !== server) {
-			const userId = await RNUserDefaults.get(`${ RocketChat.TOKEN_KEY }-${ server }`);
-			if (split) {
-				navigation.navigate('RoomView');
+			logEvent(events.RL_CHANGE_SERVER);
+			const userId = await UserPreferences.getStringAsync(`${ RocketChat.TOKEN_KEY }-${ server }`);
+			if (isMasterDetail) {
+				goRoom({ item: {}, isMasterDetail });
 			}
 			if (!userId) {
-				appStart();
-				this.newServerTimeout = setTimeout(() => {
-					EventEmitter.emit('NewServer', { server });
-				}, 1000);
+				setTimeout(() => {
+					this.navToNewServer(currentServer);
+					this.newServerTimeout = setTimeout(() => {
+						EventEmitter.emit('NewServer', { server });
+					}, ANIMATION_DURATION);
+				}, ANIMATION_DURATION);
 			} else {
-				selectServerRequest(server);
+				await localAuthenticate(server);
+				selectServerRequest(server, version);
 			}
 		}
 	}
+
+	remove = server => showConfirmationAlert({
+		message: I18n.t('This_will_remove_all_data_from_this_server'),
+		confirmationText: I18n.t('Delete'),
+		onPress: async() => {
+			this.close();
+			try {
+				await RocketChat.removeServer({ server });
+			} catch {
+				// do nothing
+			}
+		}
+	});
 
 	handleCommands = ({ event }) => {
 		const { servers } = this.state;
@@ -164,64 +175,45 @@ class ServerDropdown extends Component {
 		}
 	}
 
-	renderSeparator = () => {
-		const { theme } = this.props;
-		return <View style={[styles.serverSeparator, { backgroundColor: themes[theme].separatorColor }]} />;
-	}
-
 	renderServer = ({ item }) => {
 		const { server, theme } = this.props;
 
 		return (
-			<Touch
-				onPress={() => this.select(item.id)}
-				testID={`rooms-list-header-server-${ item.id }`}
+			<ServerItem
+				item={item}
+				onPress={() => this.select(item.id, item.version)}
+				onLongPress={() => (item.id === server || this.remove(item.id))}
+				hasCheck={item.id === server}
 				theme={theme}
-			>
-				<View style={styles.serverItemContainer}>
-					{item.iconURL
-						? (
-							<Image
-								source={{ uri: item.iconURL }}
-								defaultSource={{ uri: 'logo' }}
-								style={styles.serverIcon}
-								onError={() => console.warn('error loading serverIcon')}
-							/>
-						)
-						: (
-							<Image
-								source={{ uri: 'logo' }}
-								style={styles.serverIcon}
-							/>
-						)
-					}
-					<View style={styles.serverTextContainer}>
-						<Text style={[styles.serverName, { color: themes[theme].titleText }]}>{item.name || item.id}</Text>
-						<Text style={[styles.serverUrl, { color: themes[theme].auxiliaryText }]}>{item.id}</Text>
-					</View>
-					{item.id === server ? <Check theme={theme} /> : null}
-				</View>
-			</Touch>
+			/>
 		);
 	}
 
 	render() {
 		const { servers } = this.state;
-		const { theme } = this.props;
+		const { theme, isMasterDetail, insets } = this.props;
 		const maxRows = 4;
 		const initialTop = 41 + (Math.min(servers.length, maxRows) * ROW_HEIGHT);
+		const statusBarHeight = insets?.top ?? 0;
+		const heightDestination = isMasterDetail ? headerHeight + statusBarHeight : 0;
 		const translateY = this.animatedValue.interpolate({
 			inputRange: [0, 1],
-			outputRange: [-initialTop, 0]
+			outputRange: [-initialTop, heightDestination]
 		});
 		const backdropOpacity = this.animatedValue.interpolate({
 			inputRange: [0, 1],
-			outputRange: [0, 0.6]
+			outputRange: [0, themes[theme].backdropOpacity]
 		});
 		return (
 			<>
 				<TouchableWithoutFeedback onPress={this.close}>
-					<Animated.View style={[styles.backdrop, { backgroundColor: themes[theme].backdropColor, opacity: backdropOpacity }]} />
+					<Animated.View style={[styles.backdrop,
+						{
+							backgroundColor: themes[theme].backdropColor,
+							opacity: backdropOpacity,
+							top: heightDestination
+						}]}
+					/>
 				</TouchableWithoutFeedback>
 				<Animated.View
 					style={[
@@ -251,7 +243,7 @@ class ServerDropdown extends Component {
 						data={servers}
 						keyExtractor={item => item.id}
 						renderItem={this.renderServer}
-						ItemSeparatorComponent={this.renderSeparator}
+						ItemSeparatorComponent={List.Separator}
 						keyboardShouldPersistTaps='always'
 					/>
 				</Animated.View>
@@ -262,13 +254,15 @@ class ServerDropdown extends Component {
 
 const mapStateToProps = state => ({
 	closeServerDropdown: state.rooms.closeServerDropdown,
-	server: state.server.server
+	server: state.server.server,
+	isMasterDetail: state.app.isMasterDetail
 });
 
 const mapDispatchToProps = dispatch => ({
 	toggleServerDropdown: () => dispatch(toggleServerDropdownAction()),
-	selectServerRequest: server => dispatch(selectServerRequestAction(server)),
-	appStart: () => dispatch(appStartAction('outside'))
+	selectServerRequest: (server, version) => dispatch(selectServerRequestAction(server, version, true, true)),
+	appStart: params => dispatch(appStartAction(params)),
+	initAdd: previousServer => dispatch(serverInitAddAction(previousServer))
 });
 
-export default withNavigation(connect(mapStateToProps, mapDispatchToProps)(withTheme(withSplit(ServerDropdown))));
+export default connect(mapStateToProps, mapDispatchToProps)(withSafeAreaInsets(withTheme(ServerDropdown)));

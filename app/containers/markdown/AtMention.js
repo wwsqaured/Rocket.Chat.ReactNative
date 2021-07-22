@@ -5,44 +5,61 @@ import { Text } from 'react-native';
 import { themes } from '../../constants/colors';
 
 import styles from './styles';
+import { logEvent, events } from '../../utils/log';
 
 const AtMention = React.memo(({
-	mention, mentions, username, navToRoomInfo, preview, style = [], theme
+	mention, mentions, username, navToRoomInfo, style = [], useRealName, theme
 }) => {
-	let mentionStyle = { ...styles.mention, color: themes[theme].buttonText };
 	if (mention === 'all' || mention === 'here') {
+		return (
+			<Text
+				style={[
+					styles.mention,
+					{
+						color: themes[theme].mentionGroupColor
+					},
+					...style
+				]}
+			>{mention}
+			</Text>
+		);
+	}
+
+	let mentionStyle = {};
+	if (mention === username) {
 		mentionStyle = {
-			...mentionStyle,
-			...styles.mentionAll
-		};
-	} else if (mention === username) {
-		mentionStyle = {
-			...mentionStyle,
-			backgroundColor: themes[theme].actionTintColor
+			color: themes[theme].mentionMeColor
 		};
 	} else {
 		mentionStyle = {
-			...mentionStyle,
-			color: themes[theme].actionTintColor
+			color: themes[theme].mentionOtherColor
 		};
 	}
 
+	const user = mentions?.find?.(m => m && m.username === mention);
+
 	const handlePress = () => {
-		if (mentions && mentions.length && mentions.findIndex(m => m.username === mention) !== -1) {
-			const index = mentions.findIndex(m => m.username === mention);
-			const navParam = {
-				t: 'd',
-				rid: mentions[index]._id
-			};
-			navToRoomInfo(navParam);
-		}
+		logEvent(events.ROOM_MENTION_GO_USER_INFO);
+		const navParam = {
+			t: 'd',
+			rid: user && user._id
+		};
+		navToRoomInfo(navParam);
 	};
 
+	if (user) {
+		return (
+			<Text
+				style={[styles.mention, mentionStyle, ...style]}
+				onPress={handlePress}
+			>
+				{useRealName && user.name ? user.name : user.username}
+			</Text>
+		);
+	}
+
 	return (
-		<Text
-			style={[preview ? { ...styles.text, color: themes[theme].bodyText } : mentionStyle, ...style]}
-			onPress={preview ? undefined : handlePress}
-		>
+		<Text style={[styles.text, { color: themes[theme].bodyText }, ...style]}>
 			{`@${ mention }`}
 		</Text>
 	);
@@ -53,7 +70,7 @@ AtMention.propTypes = {
 	username: PropTypes.string,
 	navToRoomInfo: PropTypes.func,
 	style: PropTypes.array,
-	preview: PropTypes.bool,
+	useRealName: PropTypes.bool,
 	theme: PropTypes.string,
 	mentions: PropTypes.oneOfType([PropTypes.array, PropTypes.object])
 };

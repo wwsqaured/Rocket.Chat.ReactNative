@@ -4,10 +4,8 @@ import {
 	View, StyleSheet, FlatList, Text
 } from 'react-native';
 import { connect } from 'react-redux';
-import { SafeAreaView } from 'react-navigation';
-import equal from 'deep-equal';
-import { orderBy } from 'lodash';
 import { Q } from '@nozbe/watermelondb';
+import * as List from '../containers/List';
 
 import Touch from '../utils/touch';
 import database from '../lib/database';
@@ -15,44 +13,44 @@ import RocketChat from '../lib/rocketchat';
 import UserItem from '../presentation/UserItem';
 import sharedStyles from './Styles';
 import I18n from '../i18n';
-import log from '../utils/log';
+import log, { logEvent, events } from '../utils/log';
 import SearchBox from '../containers/SearchBox';
 import { CustomIcon } from '../lib/Icons';
-import { CloseModalButton } from '../containers/HeaderButton';
+import * as HeaderButton from '../containers/HeaderButton';
 import StatusBar from '../containers/StatusBar';
 import { themes } from '../constants/colors';
 import { withTheme } from '../theme';
-import { themedHeader } from '../utils/navigation';
+import { getUserSelector } from '../selectors/login';
+import Navigation from '../lib/Navigation';
+import { createChannelRequest } from '../actions/createChannel';
+import { goRoom } from '../utils/goRoom';
+import SafeAreaView from '../containers/SafeAreaView';
+import { compareServerVersion, methods } from '../lib/utils';
+
+const QUERY_SIZE = 50;
 
 const styles = StyleSheet.create({
-	safeAreaView: {
-		flex: 1
-	},
-	separator: {
-		marginLeft: 60
-	},
-	createChannelButton: {
-		marginVertical: 25
-	},
-	createChannelContainer: {
+	button: {
 		height: 46,
 		flexDirection: 'row',
 		alignItems: 'center'
 	},
-	createChannelIcon: {
+	buttonIcon: {
 		marginLeft: 18,
-		marginRight: 15
+		marginRight: 16
 	},
-	createChannelText: {
+	buttonText: {
 		fontSize: 17,
 		...sharedStyles.textRegular
+	},
+	buttonContainer: {
+		paddingVertical: 25
 	}
 });
 
 class NewMessageView extends React.Component {
-	static navigationOptions = ({ navigation, screenProps }) => ({
-		...themedHeader(screenProps.theme),
-		headerLeft: <CloseModalButton navigation={navigation} testID='new-message-view-close' />,
+	static navigationOptions = ({ navigation }) => ({
+		headerLeft: () => <HeaderButton.CloseModal navigation={navigation} testID='new-message-view-close' />,
 		title: I18n.t('New_Message')
 	})
 
@@ -63,7 +61,11 @@ class NewMessageView extends React.Component {
 			id: PropTypes.string,
 			token: PropTypes.string
 		}),
-		theme: PropTypes.string
+		create: PropTypes.func,
+		maxUsers: PropTypes.number,
+		theme: PropTypes.string,
+		isMasterDetail: PropTypes.bool,
+		serverVersion: PropTypes.string
 	};
 
 	constructor(props) {
@@ -75,40 +77,20 @@ class NewMessageView extends React.Component {
 		};
 	}
 
-	shouldComponentUpdate(nextProps, nextState) {
-		const { search, chats } = this.state;
-		const { theme } = this.props;
-		if (nextProps.theme !== theme) {
-			return true;
-		}
-		if (!equal(nextState.search, search)) {
-			return true;
-		}
-		if (!equal(nextState.chats, chats)) {
-			return true;
-		}
-		return false;
-	}
-
-	componentWillUnmount() {
-		if (this.querySubscription && this.querySubscription.unsubscribe) {
-			this.querySubscription.unsubscribe();
-		}
-	}
-
 	// eslint-disable-next-line react/sort-comp
 	init = async() => {
 		try {
 			const db = database.active;
-			const observable = await db.collections
+			const chats = await db.collections
 				.get('subscriptions')
-				.query(Q.where('t', 'd'))
-				.observeWithColumns(['room_updated_at']);
+				.query(
+					Q.where('t', 'd'),
+					Q.experimentalTake(QUERY_SIZE),
+					Q.experimentalSortBy('room_updated_at', Q.desc)
+				)
+				.fetch();
 
-			this.querySubscription = observable.subscribe((data) => {
-				const chats = orderBy(data, ['roomUpdatedAt'], ['desc']);
-				this.setState({ chats });
-			});
+			this.setState({ chats });
 		} catch (e) {
 			log(e);
 		}
@@ -116,12 +98,6 @@ class NewMessageView extends React.Component {
 
 	onSearchChangeText(text) {
 		this.search(text);
-	}
-
-	onPressItem = (item) => {
-		const { navigation } = this.props;
-		const onPressItem = navigation.getParam('onPressItem', () => {});
-		onPressItem(item);
 	}
 
 	dismiss = () => {
@@ -137,34 +113,97 @@ class NewMessageView extends React.Component {
 	}
 
 	createChannel = () => {
+		logEvent(events.NEW_MSG_CREATE_CHANNEL);
 		const { navigation } = this.props;
-		navigation.navigate('SelectedUsersViewCreateChannel', { nextActionID: 'CREATE_CHANNEL', title: I18n.t('Select_Users') });
+		navigation.navigate('SelectedUsersViewCreateChannel', { nextAction: () => navigation.navigate('CreateChannelView') });
+	}
+
+	createTeam = () => {
+		logEvent(events.NEW_MSG_CREATE_TEAM);
+		const { navigation } = this.props;
+		navigation.navigate('SelectedUsersViewCreateChannel', { nextAction: () => navigation.navigate('CreateChannelView', { isTeam: true }) });
+	}
+
+	createGroupChat = () => {
+		logEvent(events.NEW_MSG_CREATE_GROUP_CHAT);
+		const { create, maxUsers, navigation } = this.props;
+		navigation.navigate('SelectedUsersViewCreateChannel', {
+			nextAction: () => create({ group: true }),
+			buttonText: I18n.t('Create'),
+			maxUsers
+		});
+	}
+
+	goRoom = (item) => {
+		logEvent(events.NEW_MSG_CHAT_WITH_USER);
+		const { isMasterDetail, navigation } = this.props;
+		if (isMasterDetail) {
+			navigation.pop();
+		}
+		goRoom({ item, isMasterDetail });
+	}
+
+	renderButton = ({
+		onPress, testID, title, icon, first
+	}) => {
+		const { theme } = this.props;
+		return (
+			<Touch
+				onPress={onPress}
+				style={{ backgroundColor: themes[theme].backgroundColor }}
+				testID={testID}
+				theme={theme}
+			>
+				<View style={[first ? sharedStyles.separatorVertical : sharedStyles.separatorBottom, styles.button, { borderColor: themes[theme].separatorColor }]}>
+					<CustomIcon style={[styles.buttonIcon, { color: themes[theme].tintColor }]} size={24} name={icon} />
+					<Text style={[styles.buttonText, { color: themes[theme].tintColor }]}>{title}</Text>
+				</View>
+			</Touch>
+		);
+	}
+
+	createDiscussion = () => {
+		logEvent(events.NEW_MSG_CREATE_DISCUSSION);
+		Navigation.navigate('CreateDiscussionView');
 	}
 
 	renderHeader = () => {
-		const { theme } = this.props;
+		const { maxUsers, theme, serverVersion } = this.props;
 		return (
 			<View style={{ backgroundColor: themes[theme].auxiliaryBackground }}>
 				<SearchBox onChangeText={text => this.onSearchChangeText(text)} testID='new-message-view-search' />
-				<Touch
-					onPress={this.createChannel}
-					style={[styles.createChannelButton, { backgroundColor: themes[theme].backgroundColor }]}
-					testID='new-message-view-create-channel'
-					theme={theme}
-				>
-					<View style={[sharedStyles.separatorVertical, styles.createChannelContainer, { borderColor: themes[theme].separatorColor }]}>
-						<CustomIcon style={[styles.createChannelIcon, { color: themes[theme].tintColor }]} size={24} name='plus' />
-						<Text style={[styles.createChannelText, { color: themes[theme].tintColor }]}>{I18n.t('Create_Channel')}</Text>
-					</View>
-				</Touch>
+				<View style={styles.buttonContainer}>
+					{this.renderButton({
+						onPress: this.createChannel,
+						title: I18n.t('Create_Channel'),
+						icon: 'channel-public',
+						testID: 'new-message-view-create-channel',
+						first: true
+					})}
+					{compareServerVersion(serverVersion, '3.13.0', methods.greaterThanOrEqualTo)
+						? (this.renderButton({
+							onPress: this.createTeam,
+							title: I18n.t('Create_Team'),
+							icon: 'teams',
+							testID: 'new-message-view-create-team'
+						})) : null}
+					{maxUsers > 2 ? this.renderButton({
+						onPress: this.createGroupChat,
+						title: I18n.t('Create_Direct_Messages'),
+						icon: 'message',
+						testID: 'new-message-view-create-direct-message'
+					}) : null}
+					{this.renderButton({
+						onPress: this.createDiscussion,
+						title: I18n.t('Create_Discussion'),
+						icon: 'discussions',
+						testID: 'new-message-view-create-discussion'
+					})}
+				</View>
 			</View>
 		);
 	}
 
-	renderSeparator = () => {
-		const { theme } = this.props;
-		return <View style={[sharedStyles.separator, styles.separator, { backgroundColor: themes[theme].separatorColor }]} />;
-	}
 
 	renderItem = ({ item, index }) => {
 		const { search, chats } = this.state;
@@ -184,7 +223,7 @@ class NewMessageView extends React.Component {
 			<UserItem
 				name={item.search ? item.name : item.fname}
 				username={item.search ? item.username : item.name}
-				onPress={() => this.onPressItem(item)}
+				onPress={() => this.goRoom(item)}
 				baseUrl={baseUrl}
 				testID={`new-message-view-item-${ item.name }`}
 				style={style}
@@ -204,22 +243,17 @@ class NewMessageView extends React.Component {
 				keyExtractor={item => item._id}
 				ListHeaderComponent={this.renderHeader}
 				renderItem={this.renderItem}
-				ItemSeparatorComponent={this.renderSeparator}
+				ItemSeparatorComponent={List.Separator}
 				contentContainerStyle={{ backgroundColor: themes[theme].backgroundColor }}
 				keyboardShouldPersistTaps='always'
 			/>
 		);
 	}
 
-	render = () => {
-		const { theme } = this.props;
+	render() {
 		return (
-			<SafeAreaView
-				style={[styles.safeAreaView, { backgroundColor: themes[theme].auxiliaryBackground }]}
-				forceInset={{ vertical: 'never' }}
-				testID='new-message-view'
-			>
-				<StatusBar theme={theme} />
+			<SafeAreaView testID='new-message-view'>
+				<StatusBar />
 				{this.renderList()}
 			</SafeAreaView>
 		);
@@ -227,11 +261,15 @@ class NewMessageView extends React.Component {
 }
 
 const mapStateToProps = state => ({
-	baseUrl: state.settings.Site_Url || state.server ? state.server.server : '',
-	user: {
-		id: state.login.user && state.login.user.id,
-		token: state.login.user && state.login.user.token
-	}
+	serverVersion: state.server.version,
+	isMasterDetail: state.app.isMasterDetail,
+	baseUrl: state.server.server,
+	maxUsers: state.settings.DirectMesssage_maxUsers || 1,
+	user: getUserSelector(state)
 });
 
-export default connect(mapStateToProps)(withTheme(NewMessageView));
+const mapDispatchToProps = dispatch => ({
+	create: params => dispatch(createChannelRequest(params))
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(withTheme(NewMessageView));

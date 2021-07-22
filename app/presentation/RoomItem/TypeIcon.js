@@ -1,24 +1,18 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 
-import Status from '../../containers/Status/Status';
 import RoomTypeIcon from '../../containers/RoomTypeIcon';
-import styles from './styles';
 
 const TypeIcon = React.memo(({
-	theme, type, prid, status
-}) => {
-	if (type === 'd') {
-		return <Status style={styles.status} size={10} status={status} />;
-	}
-	return <RoomTypeIcon theme={theme} type={prid ? 'discussion' : type} />;
-});
+	type, prid, status, isGroupChat, teamMain
+}) => <RoomTypeIcon type={prid ? 'discussion' : type} isGroupChat={isGroupChat} status={status} teamMain={teamMain} />);
 
 TypeIcon.propTypes = {
-	theme: PropTypes.string,
 	type: PropTypes.string,
 	status: PropTypes.string,
-	prid: PropTypes.string
+	prid: PropTypes.string,
+	isGroupChat: PropTypes.bool,
+	teamMain: PropTypes.bool
 };
 
 export default TypeIcon;

@@ -2,60 +2,64 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { View, ScrollView, Keyboard } from 'react-native';
 import { connect } from 'react-redux';
-import Dialog from 'react-native-dialog';
+import prompt from 'react-native-prompt-android';
 import SHA256 from 'js-sha256';
 import ImagePicker from 'react-native-image-crop-picker';
 import RNPickerSelect from 'react-native-picker-select';
-import { SafeAreaView } from 'react-navigation';
-import { HeaderBackButton } from 'react-navigation-stack';
-import equal from 'deep-equal';
+import { dequal } from 'dequal';
+import omit from 'lodash/omit';
 
 import Touch from '../../utils/touch';
 import KeyboardView from '../../presentation/KeyboardView';
 import sharedStyles from '../Styles';
 import styles from './styles';
 import scrollPersistTaps from '../../utils/scrollPersistTaps';
-import { showErrorAlert } from '../../utils/info';
+import { showErrorAlert, showConfirmationAlert } from '../../utils/info';
 import { LISTENER } from '../../containers/Toast';
 import EventEmitter from '../../utils/events';
 import RocketChat from '../../lib/rocketchat';
 import RCTextInput from '../../containers/TextInput';
-import log from '../../utils/log';
+import log, { logEvent, events } from '../../utils/log';
 import I18n from '../../i18n';
 import Button from '../../containers/Button';
 import Avatar from '../../containers/Avatar';
 import { setUser as setUserAction } from '../../actions/login';
 import { CustomIcon } from '../../lib/Icons';
-import { DrawerButton } from '../../containers/HeaderButton';
+import * as HeaderButton from '../../containers/HeaderButton';
 import StatusBar from '../../containers/StatusBar';
 import { themes } from '../../constants/colors';
 import { withTheme } from '../../theme';
-import { themedHeader } from '../../utils/navigation';
+import { getUserSelector } from '../../selectors/login';
+import SafeAreaView from '../../containers/SafeAreaView';
 
 class ProfileView extends React.Component {
-	static navigationOptions = ({ navigation, screenProps }) => ({
-		...themedHeader(screenProps.theme),
-		headerLeft: screenProps.split ? (
-			<HeaderBackButton
-				onPress={() => navigation.navigate('SettingsView')}
-				tintColor={themes[screenProps.theme].headerTintColor}
-			/>
-		) : (
-			<DrawerButton navigation={navigation} />
-		),
-		title: I18n.t('Profile')
-	})
+	static navigationOptions = ({ navigation, isMasterDetail }) => {
+		const options = {
+			title: I18n.t('Profile')
+		};
+		if (!isMasterDetail) {
+			options.headerLeft = () => <HeaderButton.Drawer navigation={navigation} />;
+		}
+		options.headerRight = () => (
+			<HeaderButton.Preferences onPress={() => navigation.navigate('UserPreferencesView')} testID='preferences-view-open' />
+		);
+		return options;
+	}
 
 	static propTypes = {
 		baseUrl: PropTypes.string,
 		user: PropTypes.object,
+		Accounts_AllowEmailChange: PropTypes.bool,
+		Accounts_AllowPasswordChange: PropTypes.bool,
+		Accounts_AllowRealNameChange: PropTypes.bool,
+		Accounts_AllowUserAvatarChange: PropTypes.bool,
+		Accounts_AllowUsernameChange: PropTypes.bool,
 		Accounts_CustomFields: PropTypes.string,
 		setUser: PropTypes.func,
 		theme: PropTypes.string
 	}
 
 	state = {
-		showPasswordAlert: false,
 		saving: false,
 		name: null,
 		username: null,
@@ -79,24 +83,26 @@ class ProfileView extends React.Component {
 		}
 	}
 
-	componentWillReceiveProps(nextProps) {
+	UNSAFE_componentWillReceiveProps(nextProps) {
 		const { user } = this.props;
-		if (!equal(user, nextProps.user)) {
+		/*
+		 * We need to ignore status because on Android ImagePicker
+		 * changes the activity, so, the user status changes and
+		 * it's resetting the avatar right after
+		 * select some image from gallery.
+		 */
+		if (!dequal(omit(user, ['status']), omit(nextProps.user, ['status']))) {
 			this.init(nextProps.user);
 		}
 	}
 
-	shouldComponentUpdate(nextProps, nextState) {
-		if (!equal(nextState, this.state)) {
-			return true;
-		}
-		if (!equal(nextProps, this.props)) {
-			return true;
-		}
-		return false;
-	}
-
 	setAvatar = (avatar) => {
+		const { Accounts_AllowUserAvatarChange } = this.props;
+
+		if (!Accounts_AllowUserAvatarChange) {
+			return;
+		}
+
 		this.setState({ avatar });
 	}
 
@@ -143,19 +149,11 @@ class ProfileView extends React.Component {
 		);
 	}
 
-	closePasswordAlert = () => {
-		this.setState({ showPasswordAlert: false });
-	}
-
 	handleError = (e, func, action) => {
-		if (e.data && e.data.errorType === 'error-too-many-requests') {
+		if (e.data && e.data.error.includes('[error-too-many-requests]')) {
 			return showErrorAlert(e.data.error);
 		}
-		showErrorAlert(
-			I18n.t('There_was_an_error_while_action', { action: I18n.t(action) }),
-			'',
-			() => this.setState({ showPasswordAlert: false })
-		);
+		showErrorAlert(I18n.t('There_was_an_error_while_action', { action: I18n.t(action) }));
 	}
 
 	submit = async() => {
@@ -200,14 +198,35 @@ class ProfileView extends React.Component {
 
 		const requirePassword = !!params.email || newPassword;
 		if (requirePassword && !params.currentPassword) {
-			return this.setState({ showPasswordAlert: true, saving: false });
+			this.setState({ saving: false });
+			prompt(
+				I18n.t('Please_enter_your_password'),
+				I18n.t('For_your_security_you_must_enter_your_current_password_to_continue'),
+				[
+					{ text: I18n.t('Cancel'), onPress: () => {}, style: 'cancel' },
+					{
+						text: I18n.t('Save'),
+						onPress: (p) => {
+							this.setState({ currentPassword: p });
+							this.submit();
+						}
+					}
+				],
+				{
+					type: 'secure-text',
+					cancelable: false
+				}
+			);
+			return;
 		}
 
 		try {
 			if (avatar.url) {
 				try {
+					logEvent(events.PROFILE_SAVE_AVATAR);
 					await RocketChat.setAvatarFromService(avatar);
 				} catch (e) {
+					logEvent(events.PROFILE_SAVE_AVATAR_F);
 					this.setState({ saving: false, currentPassword: null });
 					return this.handleError(e, 'setAvatarFromService', 'changing_avatar');
 				}
@@ -216,22 +235,30 @@ class ProfileView extends React.Component {
 			const result = await RocketChat.saveUserProfile(params, customFields);
 
 			if (result.success) {
+				logEvent(events.PROFILE_SAVE_CHANGES);
 				if (customFields) {
 					setUser({ customFields, ...params });
 				} else {
 					setUser({ ...params });
 				}
-				this.setState({ saving: false, showPasswordAlert: false });
 				EventEmitter.emit(LISTENER, { message: I18n.t('Profile_saved_successfully') });
 				this.init();
 			}
+			this.setState({ saving: false });
 		} catch (e) {
+			logEvent(events.PROFILE_SAVE_CHANGES_F);
 			this.setState({ saving: false, currentPassword: null });
 			this.handleError(e, 'saveUserProfile', 'saving_profile');
 		}
 	}
 
 	resetAvatar = async() => {
+		const { Accounts_AllowUserAvatarChange } = this.props;
+
+		if (!Accounts_AllowUserAvatarChange) {
+			return;
+		}
+
 		try {
 			const { user } = this.props;
 			await RocketChat.resetAvatar(user.id);
@@ -243,20 +270,34 @@ class ProfileView extends React.Component {
 	}
 
 	pickImage = async() => {
+		const { Accounts_AllowUserAvatarChange } = this.props;
+
+		if (!Accounts_AllowUserAvatarChange) {
+			return;
+		}
+
 		const options = {
 			cropping: true,
 			compressImageQuality: 0.8,
+			freeStyleCropEnabled: true,
 			cropperAvoidEmptySpaceAroundImage: false,
 			cropperChooseText: I18n.t('Choose'),
 			cropperCancelText: I18n.t('Cancel'),
 			includeBase64: true
 		};
 		try {
+			logEvent(events.PROFILE_PICK_AVATAR);
 			const response = await ImagePicker.openPicker(options);
 			this.setAvatar({ url: response.path, data: `data:image/jpeg;base64,${ response.data }`, service: 'upload' });
 		} catch (error) {
+			logEvent(events.PROFILE_PICK_AVATAR_F);
 			console.warn(error);
 		}
+	}
+
+	pickImageWithURL = (avatarUrl) => {
+		logEvent(events.PROFILE_PICK_AVATAR_WITH_URL);
+		this.setAvatar({ url: avatarUrl, data: avatarUrl, service: 'url' });
 	}
 
 	renderAvatarButton = ({
@@ -279,31 +320,38 @@ class ProfileView extends React.Component {
 
 	renderAvatarButtons = () => {
 		const { avatarUrl, avatarSuggestions } = this.state;
-		const { user, baseUrl, theme } = this.props;
+		const {
+			user,
+			theme,
+			Accounts_AllowUserAvatarChange
+		} = this.props;
 
 		return (
 			<View style={styles.avatarButtons}>
 				{this.renderAvatarButton({
-					child: <Avatar text={`@${ user.username }`} size={50} baseUrl={baseUrl} userId={user.id} token={user.token} />,
+					child: <Avatar text={`@${ user.username }`} size={50} />,
 					onPress: () => this.resetAvatar(),
+					disabled: !Accounts_AllowUserAvatarChange,
 					key: 'profile-view-reset-avatar'
 				})}
 				{this.renderAvatarButton({
 					child: <CustomIcon name='upload' size={30} color={themes[theme].bodyText} />,
 					onPress: () => this.pickImage(),
+					disabled: !Accounts_AllowUserAvatarChange,
 					key: 'profile-view-upload-avatar'
 				})}
 				{this.renderAvatarButton({
-					child: <CustomIcon name='permalink' size={30} color={themes[theme].bodyText} />,
-					onPress: () => this.setAvatar({ url: avatarUrl, data: avatarUrl, service: 'url' }),
+					child: <CustomIcon name='link' size={30} color={themes[theme].bodyText} />,
+					onPress: () => this.pickImageWithURL(avatarUrl),
 					disabled: !avatarUrl,
 					key: 'profile-view-avatar-url-button'
 				})}
 				{Object.keys(avatarSuggestions).map((service) => {
 					const { url, blob, contentType } = avatarSuggestions[service];
 					return this.renderAvatarButton({
+						disabled: !Accounts_AllowUserAvatarChange,
 						key: `profile-view-avatar-${ service }`,
-						child: <Avatar avatar={url} size={50} baseUrl={baseUrl} userId={user.id} token={user.token} />,
+						child: <Avatar avatar={url} size={50} />,
 						onPress: () => this.setAvatar({
 							url, data: blob, service, contentType
 						})
@@ -375,12 +423,36 @@ class ProfileView extends React.Component {
 		}
 	}
 
+	logoutOtherLocations = () => {
+		logEvent(events.PL_OTHER_LOCATIONS);
+		showConfirmationAlert({
+			message: I18n.t('You_will_be_logged_out_from_other_locations'),
+			confirmationText: I18n.t('Logout'),
+			onPress: async() => {
+				try {
+					await RocketChat.logoutOtherLocations();
+					EventEmitter.emit(LISTENER, { message: I18n.t('Logged_out_of_other_clients_successfully') });
+				} catch {
+					logEvent(events.PL_OTHER_LOCATIONS_F);
+					EventEmitter.emit(LISTENER, { message: I18n.t('Logout_failed') });
+				}
+			}
+		});
+	}
+
 	render() {
 		const {
-			name, username, email, newPassword, avatarUrl, customFields, avatar, saving, showPasswordAlert
+			name, username, email, newPassword, avatarUrl, customFields, avatar, saving
 		} = this.state;
 		const {
-			baseUrl, user, theme, Accounts_CustomFields
+			user,
+			theme,
+			Accounts_AllowEmailChange,
+			Accounts_AllowPasswordChange,
+			Accounts_AllowRealNameChange,
+			Accounts_AllowUserAvatarChange,
+			Accounts_AllowUsernameChange,
+			Accounts_CustomFields
 		} = this.props;
 
 		return (
@@ -389,8 +461,8 @@ class ProfileView extends React.Component {
 				contentContainerStyle={sharedStyles.container}
 				keyboardVerticalOffset={128}
 			>
-				<StatusBar theme={theme} />
-				<SafeAreaView style={sharedStyles.container} testID='profile-view' forceInset={{ vertical: 'never' }}>
+				<StatusBar />
+				<SafeAreaView testID='profile-view'>
 					<ScrollView
 						contentContainerStyle={sharedStyles.containerScrollView}
 						testID='profile-view-list'
@@ -398,15 +470,17 @@ class ProfileView extends React.Component {
 					>
 						<View style={styles.avatarContainer} testID='profile-view-avatar'>
 							<Avatar
-								text={username}
-								avatar={avatar && avatar.url}
+								text={user.username}
+								avatar={avatar?.url}
+								isStatic={avatar?.url}
 								size={100}
-								baseUrl={baseUrl}
-								userId={user.id}
-								token={user.token}
 							/>
 						</View>
 						<RCTextInput
+							editable={Accounts_AllowRealNameChange}
+							inputStyle={[
+								!Accounts_AllowRealNameChange && styles.disabled
+							]}
 							inputRef={(e) => { this.name = e; }}
 							label={I18n.t('Name')}
 							placeholder={I18n.t('Name')}
@@ -417,6 +491,10 @@ class ProfileView extends React.Component {
 							theme={theme}
 						/>
 						<RCTextInput
+							editable={Accounts_AllowUsernameChange}
+							inputStyle={[
+								!Accounts_AllowUsernameChange && styles.disabled
+							]}
 							inputRef={(e) => { this.username = e; }}
 							label={I18n.t('Username')}
 							placeholder={I18n.t('Username')}
@@ -427,6 +505,10 @@ class ProfileView extends React.Component {
 							theme={theme}
 						/>
 						<RCTextInput
+							editable={Accounts_AllowEmailChange}
+							inputStyle={[
+								!Accounts_AllowEmailChange && styles.disabled
+							]}
 							inputRef={(e) => { this.email = e; }}
 							label={I18n.t('Email')}
 							placeholder={I18n.t('Email')}
@@ -437,6 +519,10 @@ class ProfileView extends React.Component {
 							theme={theme}
 						/>
 						<RCTextInput
+							editable={Accounts_AllowPasswordChange}
+							inputStyle={[
+								!Accounts_AllowPasswordChange && styles.disabled
+							]}
 							inputRef={(e) => { this.newPassword = e; }}
 							label={I18n.t('New_Password')}
 							placeholder={I18n.t('New_Password')}
@@ -454,6 +540,10 @@ class ProfileView extends React.Component {
 						/>
 						{this.renderCustomFields()}
 						<RCTextInput
+							editable={Accounts_AllowUserAvatarChange}
+							inputStyle={[
+								!Accounts_AllowUserAvatarChange && styles.disabled
+							]}
 							inputRef={(e) => { this.avatarUrl = e; }}
 							label={I18n.t('Avatar_Url')}
 							placeholder={I18n.t('Avatar_Url')}
@@ -473,22 +563,14 @@ class ProfileView extends React.Component {
 							loading={saving}
 							theme={theme}
 						/>
-						<Dialog.Container visible={showPasswordAlert}>
-							<Dialog.Title>
-								{I18n.t('Please_enter_your_password')}
-							</Dialog.Title>
-							<Dialog.Description>
-								{I18n.t('For_your_security_you_must_enter_your_current_password_to_continue')}
-							</Dialog.Description>
-							<Dialog.Input
-								onChangeText={value => this.setState({ currentPassword: value })}
-								secureTextEntry
-								testID='profile-view-typed-password'
-								style={styles.dialogInput}
-							/>
-							<Dialog.Button label={I18n.t('Cancel')} onPress={this.closePasswordAlert} />
-							<Dialog.Button label={I18n.t('Save')} onPress={this.submit} />
-						</Dialog.Container>
+						<Button
+							title={I18n.t('Logout_from_other_logged_in_locations')}
+							type='secondary'
+							backgroundColor={themes[theme].chatComponentBackground}
+							onPress={this.logoutOtherLocations}
+							testID='profile-view-logout-other-locations'
+							theme={theme}
+						/>
 					</ScrollView>
 				</SafeAreaView>
 			</KeyboardView>
@@ -497,16 +579,14 @@ class ProfileView extends React.Component {
 }
 
 const mapStateToProps = state => ({
-	user: {
-		id: state.login.user && state.login.user.id,
-		name: state.login.user && state.login.user.name,
-		username: state.login.user && state.login.user.username,
-		customFields: state.login.user && state.login.user.customFields,
-		emails: state.login.user && state.login.user.emails,
-		token: state.login.user && state.login.user.token
-	},
+	user: getUserSelector(state),
+	Accounts_AllowEmailChange: state.settings.Accounts_AllowEmailChange,
+	Accounts_AllowPasswordChange: state.settings.Accounts_AllowPasswordChange,
+	Accounts_AllowRealNameChange: state.settings.Accounts_AllowRealNameChange,
+	Accounts_AllowUserAvatarChange: state.settings.Accounts_AllowUserAvatarChange,
+	Accounts_AllowUsernameChange: state.settings.Accounts_AllowUsernameChange,
 	Accounts_CustomFields: state.settings.Accounts_CustomFields,
-	baseUrl: state.settings.Site_Url || state.server ? state.server.server : ''
+	baseUrl: state.server.server
 });
 
 const mapDispatchToProps = dispatch => ({

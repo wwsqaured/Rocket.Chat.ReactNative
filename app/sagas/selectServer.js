@@ -1,24 +1,28 @@
-import {
-	put, take, takeLatest, fork, cancel, race
-} from 'redux-saga/effects';
+import { put, takeLatest } from 'redux-saga/effects';
 import { Alert } from 'react-native';
-import RNUserDefaults from 'rn-user-defaults';
 import { sanitizedRaw } from '@nozbe/watermelondb/RawRecord';
-import semver from 'semver';
+import { Q } from '@nozbe/watermelondb';
+import valid from 'semver/functions/valid';
+import coerce from 'semver/functions/coerce';
 
 import Navigation from '../lib/Navigation';
 import { SERVER } from '../actions/actionsTypes';
-import * as actions from '../actions';
 import {
 	serverFailure, selectServerRequest, selectServerSuccess, selectServerFailure
 } from '../actions/server';
+import { clearSettings } from '../actions/settings';
 import { setUser } from '../actions/login';
 import RocketChat from '../lib/rocketchat';
 import database from '../lib/database';
-import log from '../utils/log';
-import { extractHostname } from '../utils/server';
+import log, { logServerVersion } from '../utils/log';
 import I18n from '../i18n';
-import { SERVERS, TOKEN, SERVER_URL } from '../constants/userDefaults';
+import { BASIC_AUTH_KEY, setBasicAuth } from '../utils/fetch';
+import { appStart, ROOT_INSIDE, ROOT_OUTSIDE } from '../actions/app';
+import UserPreferences from '../lib/userPreferences';
+import { encryptionStop } from '../actions/encryption';
+import SSLPinning from '../utils/sslPinning';
+
+import { inquiryReset } from '../ee/omnichannel/actions/inquiry';
 
 const getServerInfo = function* getServerInfo({ server, raiseError = true }) {
 	try {
@@ -30,26 +34,29 @@ const getServerInfo = function* getServerInfo({ server, raiseError = true }) {
 		if (!serverInfo.success || !websocketInfo.success) {
 			if (raiseError) {
 				const info = serverInfo.success ? websocketInfo : serverInfo;
-				Alert.alert(I18n.t('Oops'), I18n.t(info.message, info.messageOptions));
+				Alert.alert(I18n.t('Oops'), info.message);
 			}
 			yield put(serverFailure());
 			return;
 		}
 
-		const validVersion = semver.coerce(serverInfo.version);
+		let serverVersion = valid(serverInfo.version);
+		if (!serverVersion) {
+			({ version: serverVersion } = coerce(serverInfo.version));
+		}
 
 		const serversDB = database.servers;
-		const serversCollection = serversDB.collections.get('servers');
+		const serversCollection = serversDB.get('servers');
 		yield serversDB.action(async() => {
 			try {
 				const serverRecord = await serversCollection.find(server);
 				await serverRecord.update((record) => {
-					record.version = validVersion;
+					record.version = serverVersion;
 				});
 			} catch (e) {
 				await serversCollection.create((record) => {
 					record._raw = sanitizedRaw({ id: server }, serversCollection.schema);
-					record.version = validVersion;
+					record.version = serverVersion;
 				});
 			}
 		});
@@ -62,13 +69,20 @@ const getServerInfo = function* getServerInfo({ server, raiseError = true }) {
 
 const handleSelectServer = function* handleSelectServer({ server, version, fetchVersion }) {
 	try {
+		// SSL Pinning - Read certificate alias and set it to be used by network requests
+		const certificate = yield UserPreferences.getStringAsync(`${ RocketChat.CERTIFICATE_KEY }-${ server }`);
+		yield SSLPinning.setCertificate(certificate, server);
+
+		yield put(inquiryReset());
+		yield put(encryptionStop());
 		const serversDB = database.servers;
-		yield RNUserDefaults.set('currentServer', server);
-		const userId = yield RNUserDefaults.get(`${ RocketChat.TOKEN_KEY }-${ server }`);
-		const userCollections = serversDB.collections.get('users');
+		yield UserPreferences.setStringAsync(RocketChat.CURRENT_SERVER, server);
+		const userId = yield UserPreferences.getStringAsync(`${ RocketChat.TOKEN_KEY }-${ server }`);
+		const userCollections = serversDB.get('users');
 		let user = null;
 		if (userId) {
 			try {
+				// search credentials on database
 				const userRecord = yield userCollections.find(userId);
 				user = {
 					id: userRecord.id,
@@ -77,31 +91,42 @@ const handleSelectServer = function* handleSelectServer({ server, version, fetch
 					name: userRecord.name,
 					language: userRecord.language,
 					status: userRecord.status,
-					roles: userRecord.roles
+					statusText: userRecord.statusText,
+					roles: userRecord.roles,
+					avatarETag: userRecord.avatarETag
 				};
-			} catch (e) {
-				// We only run it if not has user on DB
-				const servers = yield RNUserDefaults.objectForKey(SERVERS);
-				const userCredentials = servers && servers.find(srv => srv[SERVER_URL] === server);
-				user = userCredentials && {
-					token: userCredentials[TOKEN]
-				};
+			} catch {
+				// search credentials on shared credentials (Experimental/Official)
+				const token = yield UserPreferences.getStringAsync(`${ RocketChat.TOKEN_KEY }-${ userId }`);
+				if (token) {
+					user = { token };
+				}
 			}
 		}
 
+		const basicAuth = yield UserPreferences.getStringAsync(`${ BASIC_AUTH_KEY }-${ server }`);
+		setBasicAuth(basicAuth);
+
+		// Check for running requests and abort them before connecting to the server
+		RocketChat.abort();
+
 		if (user) {
+			yield put(clearSettings());
 			yield RocketChat.connect({ server, user, logoutOnError: true });
 			yield put(setUser(user));
-			yield put(actions.appStart('inside'));
+			yield put(appStart({ root: ROOT_INSIDE }));
 		} else {
 			yield RocketChat.connect({ server });
-			yield put(actions.appStart('outside'));
+			yield put(appStart({ root: ROOT_OUTSIDE }));
 		}
 
 		// We can't use yield here because fetch of Settings & Custom Emojis is slower
 		// and block the selectServerSuccess raising multiples errors
 		RocketChat.setSettings();
 		RocketChat.setCustomEmojis();
+		RocketChat.setPermissions();
+		RocketChat.setRoles();
+		RocketChat.setEnterpriseModules();
 
 		let serverInfo;
 		if (fetchVersion) {
@@ -109,28 +134,48 @@ const handleSelectServer = function* handleSelectServer({ server, version, fetch
 		}
 
 		// Return server version even when offline
-		yield put(selectServerSuccess(server, (serverInfo && serverInfo.version) || version));
+		const serverVersion = (serverInfo && serverInfo.version) || version;
+
+		// we'll set serverVersion as metadata for bugsnag
+		logServerVersion(serverVersion);
+		yield put(selectServerSuccess(server, serverVersion));
 	} catch (e) {
 		yield put(selectServerFailure());
 		log(e);
 	}
 };
 
-const handleServerRequest = function* handleServerRequest({ server, certificate }) {
+const handleServerRequest = function* handleServerRequest({ server, username, fromServerHistory }) {
 	try {
-		if (certificate) {
-			yield RNUserDefaults.setObjectForKey(extractHostname(server), certificate);
-		}
+		// SSL Pinning - Read certificate alias and set it to be used by network requests
+		const certificate = yield UserPreferences.getStringAsync(`${ RocketChat.CERTIFICATE_KEY }-${ server }`);
+		yield SSLPinning.setCertificate(certificate, server);
 
 		const serverInfo = yield getServerInfo({ server });
+		const serversDB = database.servers;
+		const serversHistoryCollection = serversDB.get('servers_history');
 
 		if (serverInfo) {
-			const loginServicesLength = yield RocketChat.getLoginServices(server);
-			if (loginServicesLength === 0) {
-				Navigation.navigate('LoginView');
-			} else {
-				Navigation.navigate('LoginSignupView');
+			yield RocketChat.getLoginServices(server);
+			yield RocketChat.getLoginSettings({ server });
+			Navigation.navigate('WorkspaceView');
+
+			if (fromServerHistory) {
+				Navigation.navigate('LoginView', { username });
 			}
+
+			yield serversDB.action(async() => {
+				try {
+					const serversHistory = await serversHistoryCollection.query(Q.where('url', server)).fetch();
+					if (!serversHistory?.length) {
+						await serversHistoryCollection.create((s) => {
+							s.url = server;
+						});
+					}
+				} catch (e) {
+					log(e);
+				}
+			});
 			yield put(selectServerRequest(server, serverInfo.version, false));
 		}
 	} catch (e) {
@@ -141,16 +186,6 @@ const handleServerRequest = function* handleServerRequest({ server, certificate 
 
 const root = function* root() {
 	yield takeLatest(SERVER.REQUEST, handleServerRequest);
-
-	while (true) {
-		const params = yield take(SERVER.SELECT_REQUEST);
-		const selectServerTask = yield fork(handleSelectServer, params);
-		yield race({
-			request: take(SERVER.SELECT_REQUEST),
-			success: take(SERVER.SELECT_SUCCESS),
-			failure: take(SERVER.SELECT_FAILURE)
-		});
-		yield cancel(selectServerTask);
-	}
+	yield takeLatest(SERVER.SELECT_REQUEST, handleSelectServer);
 };
 export default root;

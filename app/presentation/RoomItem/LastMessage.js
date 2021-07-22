@@ -1,15 +1,15 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import _ from 'lodash';
+import { dequal } from 'dequal';
 
 import I18n from '../../i18n';
 import styles from './styles';
 import Markdown from '../../containers/markdown';
 import { themes } from '../../constants/colors';
-import shortnameToUnicode from '../../utils/shortnameToUnicode';
+import { E2E_MESSAGE_TYPE, E2E_STATUS } from '../../lib/encryption/constants';
 
 const formatMsg = ({
-	lastMessage, type, showLastMessage, username
+	lastMessage, type, showLastMessage, username, useRealName
 }) => {
 	if (!showLastMessage) {
 		return '';
@@ -30,30 +30,33 @@ const formatMsg = ({
 		return I18n.t('User_sent_an_attachment', { user });
 	}
 
+	// Encrypted message pending decrypt
+	if (lastMessage.t === E2E_MESSAGE_TYPE && lastMessage.e2e !== E2E_STATUS.DONE) {
+		lastMessage.msg = I18n.t('Encrypted_message');
+	}
+
 	if (isLastMessageSentByMe) {
 		prefix = I18n.t('You_colon');
 	}	else if (type !== 'd') {
-		prefix = `${ lastMessage.u.username }: `;
+		const { u: { name } } = lastMessage;
+		prefix = `${ useRealName ? name : lastMessage.u.username }: `;
 	}
 
-	let msg = `${ prefix }${ lastMessage.msg.replace(/[\n\t\r]/igm, '') }`;
-	if (msg) {
-		msg = shortnameToUnicode(msg);
-	}
-	return msg;
+	return `${ prefix }${ lastMessage.msg }`;
 };
 
-const arePropsEqual = (oldProps, newProps) => _.isEqual(oldProps, newProps);
+const arePropsEqual = (oldProps, newProps) => dequal(oldProps, newProps);
 
 const LastMessage = React.memo(({
-	lastMessage, type, showLastMessage, username, alert, theme
+	lastMessage, type, showLastMessage, username, alert, useRealName, theme
 }) => (
 	<Markdown
 		msg={formatMsg({
-			lastMessage, type, showLastMessage, username
+			lastMessage, type, showLastMessage, username, useRealName
 		})}
 		style={[styles.markdownText, { color: alert ? themes[theme].bodyText : themes[theme].auxiliaryText }]}
 		customEmojis={false}
+		useRealName={useRealName}
 		numberOfLines={2}
 		preview
 		theme={theme}
@@ -66,6 +69,7 @@ LastMessage.propTypes = {
 	type: PropTypes.string,
 	showLastMessage: PropTypes.bool,
 	username: PropTypes.string,
+	useRealName: PropTypes.bool,
 	alert: PropTypes.bool
 };
 

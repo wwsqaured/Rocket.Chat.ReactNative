@@ -1,10 +1,10 @@
 import database from '../database';
 import log from '../../utils/log';
 
-export default async function readMessages(rid, lastOpen) {
+export default async function readMessages(rid, ls, updateLastOpen = false) {
 	try {
 		const db = database.active;
-		const subscription = await db.collections.get('subscriptions').find(rid);
+		const subscription = await db.get('subscriptions').find(rid);
 
 		// RC 0.61.0
 		await this.sdk.post('subscriptions.read', { rid });
@@ -17,8 +17,10 @@ export default async function readMessages(rid, lastOpen) {
 					s.unread = 0;
 					s.userMentions = 0;
 					s.groupMentions = 0;
-					s.ls = lastOpen;
-					s.lastOpen = lastOpen;
+					s.ls = ls;
+					if (updateLastOpen) {
+						s.lastOpen = ls;
+					}
 				});
 			} catch (e) {
 				// Do nothing

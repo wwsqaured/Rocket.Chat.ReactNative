@@ -1,12 +1,15 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { KeyboardUtils } from 'react-native-keyboard-input';
+import { Keyboard } from 'react-native';
 
 import Message from './Message';
+import MessageContext from './Context';
 import debounce from '../../utils/debounce';
 import { SYSTEM_MESSAGES, getMessageTranslation } from './utils';
+import { E2E_MESSAGE_TYPE, E2E_STATUS } from '../../lib/encryption/constants';
 import messagesStatus from '../../constants/messagesStatus';
 import { withTheme } from '../../theme';
+import openLink from '../../utils/openLink';
 
 class MessageContainer extends React.Component {
 	static propTypes = {
@@ -16,8 +19,8 @@ class MessageContainer extends React.Component {
 			username: PropTypes.string.isRequired,
 			token: PropTypes.string.isRequired
 		}),
+		rid: PropTypes.string,
 		timeFormat: PropTypes.string,
-		customThreadTimeFormat: PropTypes.string,
 		style: PropTypes.any,
 		archived: PropTypes.bool,
 		broadcast: PropTypes.bool,
@@ -27,13 +30,15 @@ class MessageContainer extends React.Component {
 		isReadReceiptEnabled: PropTypes.bool,
 		isThreadRoom: PropTypes.bool,
 		useRealName: PropTypes.bool,
-		useMarkdown: PropTypes.bool,
 		autoTranslateRoom: PropTypes.bool,
 		autoTranslateLanguage: PropTypes.string,
 		status: PropTypes.number,
+		isIgnored: PropTypes.bool,
+		highlighted: PropTypes.bool,
 		getCustomEmoji: PropTypes.func,
 		onLongPress: PropTypes.func,
 		onReactionPress: PropTypes.func,
+		onEncryptedPress: PropTypes.func,
 		onDiscussionPress: PropTypes.func,
 		onThreadPress: PropTypes.func,
 		errorActionsShow: PropTypes.func,
@@ -44,15 +49,37 @@ class MessageContainer extends React.Component {
 		onReactionLongPress: PropTypes.func,
 		navToRoomInfo: PropTypes.func,
 		callJitsi: PropTypes.func,
-		theme: PropTypes.string
+		blockAction: PropTypes.func,
+		theme: PropTypes.string,
+		threadBadgeColor: PropTypes.string,
+		toggleFollowThread: PropTypes.func,
+		jumpToMessage: PropTypes.func,
+		onPress: PropTypes.func
 	}
 
 	static defaultProps = {
+		getCustomEmoji: () => {},
 		onLongPress: () => {},
+		onReactionPress: () => {},
+		onEncryptedPress: () => {},
+		onDiscussionPress: () => {},
+		onThreadPress: () => {},
+		errorActionsShow: () => {},
+		replyBroadcast: () => {},
+		reactionInit: () => {},
+		fetchThreadName: () => {},
+		showAttachment: () => {},
+		onReactionLongPress: () => {},
+		navToRoomInfo: () => {},
+		callJitsi: () => {},
+		blockAction: () => {},
 		archived: false,
 		broadcast: false,
+		isIgnored: false,
 		theme: 'light'
 	}
+
+	state = { isManualUnignored: false };
 
 	componentDidMount() {
 		const { item } = this.props;
@@ -64,9 +91,24 @@ class MessageContainer extends React.Component {
 		}
 	}
 
-	shouldComponentUpdate(nextProps) {
-		const { theme } = this.props;
+	shouldComponentUpdate(nextProps, nextState) {
+		const { isManualUnignored } = this.state;
+		const {
+			theme, threadBadgeColor, isIgnored, highlighted
+		} = this.props;
 		if (nextProps.theme !== theme) {
+			return true;
+		}
+		if (nextProps.highlighted !== highlighted) {
+			return true;
+		}
+		if (nextProps.threadBadgeColor !== threadBadgeColor) {
+			return true;
+		}
+		if (nextProps.isIgnored !== isIgnored) {
+			return true;
+		}
+		if (nextState.isManualUnignored !== isManualUnignored) {
 			return true;
 		}
 		return false;
@@ -79,8 +121,17 @@ class MessageContainer extends React.Component {
 	}
 
 	onPress = debounce(() => {
+		const { onPress } = this.props;
+		if (this.isIgnored) {
+			return this.onIgnoredMessagePress();
+		}
+
+		if (onPress) {
+			return onPress();
+		}
+
 		const { item, isThreadRoom } = this.props;
-		KeyboardUtils.dismiss();
+		Keyboard.dismiss();
 
 		if (((item.tlm || item.tmid) && !isThreadRoom)) {
 			this.onThreadPress();
@@ -89,7 +140,7 @@ class MessageContainer extends React.Component {
 
 	onLongPress = () => {
 		const { archived, onLongPress, item } = this.props;
-		if (this.isInfo || this.hasError || archived) {
+		if (this.isInfo || this.hasError || this.isEncrypted || archived) {
 			return;
 		}
 		if (onLongPress) {
@@ -118,6 +169,13 @@ class MessageContainer extends React.Component {
 		}
 	}
 
+	onEncryptedPress = () => {
+		const { onEncryptedPress } = this.props;
+		if (onEncryptedPress) {
+			onEncryptedPress();
+		}
+	}
+
 	onDiscussionPress = () => {
 		const { onDiscussionPress, item } = this.props;
 		if (onDiscussionPress) {
@@ -130,6 +188,10 @@ class MessageContainer extends React.Component {
 		if (onThreadPress) {
 			onThreadPress(item);
 		}
+	}
+
+	onIgnoredMessagePress = () => {
+		this.setState({ isManualUnignored: true });
 	}
 
 	get isHeader() {
@@ -169,16 +231,17 @@ class MessageContainer extends React.Component {
 	}
 
 	get isThreadSequential() {
-		const {
-			item, previousItem, isThreadRoom
-		} = this.props;
+		const { item, isThreadRoom } = this.props;
 		if (isThreadRoom) {
 			return false;
 		}
-		if (previousItem && item.tmid && ((previousItem.tmid === item.tmid) || (previousItem.id === item.tmid))) {
-			return true;
-		}
-		return false;
+		return item.tmid;
+	}
+
+	get isEncrypted() {
+		const { item } = this.props;
+		const { t, e2e } = item;
+		return t === E2E_MESSAGE_TYPE && e2e !== E2E_STATUS.DONE;
 	}
 
 	get isInfo() {
@@ -189,6 +252,12 @@ class MessageContainer extends React.Component {
 	get isTemp() {
 		const { item } = this.props;
 		return item.status === messagesStatus.TEMP || item.status === messagesStatus.ERROR;
+	}
+
+	get isIgnored() {
+		const { isManualUnignored } = this.state;
+		const { isIgnored } = this.props;
+		return isManualUnignored ? false : isIgnored;
 	}
 
 	get hasError() {
@@ -210,12 +279,69 @@ class MessageContainer extends React.Component {
 		}
 	}
 
+	onLinkPress = (link) => {
+		const { item, theme, jumpToMessage } = this.props;
+		const isMessageLink = item?.attachments?.findIndex(att => att?.message_link === link) !== -1;
+		if (isMessageLink) {
+			return jumpToMessage(link);
+		}
+		openLink(link, theme);
+	}
+
 	render() {
 		const {
-			item, user, style, archived, baseUrl, useRealName, broadcast, fetchThreadName, customThreadTimeFormat, showAttachment, timeFormat, useMarkdown, isReadReceiptEnabled, autoTranslateRoom, autoTranslateLanguage, navToRoomInfo, getCustomEmoji, isThreadRoom, callJitsi, theme
+			item,
+			user,
+			style,
+			archived,
+			baseUrl,
+			useRealName,
+			broadcast,
+			fetchThreadName,
+			showAttachment,
+			timeFormat,
+			isReadReceiptEnabled,
+			autoTranslateRoom,
+			autoTranslateLanguage,
+			navToRoomInfo,
+			getCustomEmoji,
+			isThreadRoom,
+			callJitsi,
+			blockAction,
+			rid,
+			theme,
+			threadBadgeColor,
+			toggleFollowThread,
+			jumpToMessage,
+			highlighted
 		} = this.props;
 		const {
-			id, msg, ts, attachments, urls, reactions, t, avatar, u, alias, editedBy, role, drid, dcount, dlm, tmid, tcount, tlm, tmsg, mentions, channels, unread, autoTranslate: autoTranslateMessage
+			id,
+			msg,
+			ts,
+			attachments,
+			urls,
+			reactions,
+			t,
+			avatar,
+			emoji,
+			u,
+			alias,
+			editedBy,
+			role,
+			drid,
+			dcount,
+			dlm,
+			tmid,
+			tcount,
+			tlm,
+			tmsg,
+			mentions,
+			channels,
+			unread,
+			blocks,
+			autoTranslate: autoTranslateMessage,
+			replies
 		} = item;
 
 		let message = msg;
@@ -226,61 +352,77 @@ class MessageContainer extends React.Component {
 		}
 
 		return (
-			<Message
-				id={id}
-				msg={message}
-				author={u}
-				ts={ts}
-				type={t}
-				attachments={attachments}
-				urls={urls}
-				reactions={reactions}
-				alias={alias}
-				avatar={avatar}
-				user={user}
-				timeFormat={timeFormat}
-				customThreadTimeFormat={customThreadTimeFormat}
-				style={style}
-				archived={archived}
-				broadcast={broadcast}
-				baseUrl={baseUrl}
-				useRealName={useRealName}
-				isReadReceiptEnabled={isReadReceiptEnabled}
-				unread={unread}
-				role={role}
-				drid={drid}
-				dcount={dcount}
-				dlm={dlm}
-				tmid={tmid}
-				tcount={tcount}
-				tlm={tlm}
-				tmsg={tmsg}
-				useMarkdown={useMarkdown}
-				fetchThreadName={fetchThreadName}
-				mentions={mentions}
-				channels={channels}
-				isEdited={editedBy && !!editedBy.username}
-				isHeader={this.isHeader}
-				isThreadReply={this.isThreadReply}
-				isThreadSequential={this.isThreadSequential}
-				isThreadRoom={isThreadRoom}
-				isInfo={this.isInfo}
-				isTemp={this.isTemp}
-				hasError={this.hasError}
-				onErrorPress={this.onErrorPress}
-				onPress={this.onPress}
-				onLongPress={this.onLongPress}
-				onReactionLongPress={this.onReactionLongPress}
-				onReactionPress={this.onReactionPress}
-				replyBroadcast={this.replyBroadcast}
-				reactionInit={this.reactionInit}
-				onDiscussionPress={this.onDiscussionPress}
-				showAttachment={showAttachment}
-				getCustomEmoji={getCustomEmoji}
-				navToRoomInfo={navToRoomInfo}
-				callJitsi={callJitsi}
-				theme={theme}
-			/>
+			<MessageContext.Provider
+				value={{
+					user,
+					baseUrl,
+					onPress: this.onPress,
+					onLongPress: this.onLongPress,
+					reactionInit: this.reactionInit,
+					onErrorPress: this.onErrorPress,
+					replyBroadcast: this.replyBroadcast,
+					onReactionPress: this.onReactionPress,
+					onEncryptedPress: this.onEncryptedPress,
+					onDiscussionPress: this.onDiscussionPress,
+					onReactionLongPress: this.onReactionLongPress,
+					onLinkPress: this.onLinkPress,
+					jumpToMessage,
+					threadBadgeColor,
+					toggleFollowThread,
+					replies
+				}}
+			>
+				<Message
+					id={id}
+					msg={message}
+					rid={rid}
+					author={u}
+					ts={ts}
+					type={t}
+					attachments={attachments}
+					blocks={blocks}
+					urls={urls}
+					reactions={reactions}
+					alias={alias}
+					avatar={avatar}
+					emoji={emoji}
+					timeFormat={timeFormat}
+					style={style}
+					archived={archived}
+					broadcast={broadcast}
+					useRealName={useRealName}
+					isReadReceiptEnabled={isReadReceiptEnabled}
+					unread={unread}
+					role={role}
+					drid={drid}
+					dcount={dcount}
+					dlm={dlm}
+					tmid={tmid}
+					tcount={tcount}
+					tlm={tlm}
+					tmsg={tmsg}
+					fetchThreadName={fetchThreadName}
+					mentions={mentions}
+					channels={channels}
+					isIgnored={this.isIgnored}
+					isEdited={editedBy && !!editedBy.username}
+					isHeader={this.isHeader}
+					isThreadReply={this.isThreadReply}
+					isThreadSequential={this.isThreadSequential}
+					isThreadRoom={isThreadRoom}
+					isInfo={this.isInfo}
+					isTemp={this.isTemp}
+					isEncrypted={this.isEncrypted}
+					hasError={this.hasError}
+					showAttachment={showAttachment}
+					getCustomEmoji={getCustomEmoji}
+					navToRoomInfo={navToRoomInfo}
+					callJitsi={callJitsi}
+					blockAction={blockAction}
+					theme={theme}
+					highlighted={highlighted}
+				/>
+			</MessageContext.Provider>
 		);
 	}
 }

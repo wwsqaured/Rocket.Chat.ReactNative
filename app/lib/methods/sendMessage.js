@@ -4,16 +4,22 @@ import messagesStatus from '../../constants/messagesStatus';
 import database from '../database';
 import log from '../../utils/log';
 import random from '../../utils/random';
+import { Encryption } from '../encryption';
+import { E2E_MESSAGE_TYPE, E2E_STATUS } from '../encryption/constants';
 
-const changeMessageStatus = async(id, tmid, status) => {
+const changeMessageStatus = async(id, tmid, status, message) => {
 	const db = database.active;
-	const msgCollection = db.collections.get('messages');
-	const threadMessagesCollection = db.collections.get('thread_messages');
+	const msgCollection = db.get('messages');
+	const threadMessagesCollection = db.get('thread_messages');
 	const successBatch = [];
 	const messageRecord = await msgCollection.find(id);
 	successBatch.push(
 		messageRecord.prepareUpdate((m) => {
 			m.status = status;
+			if (message) {
+				m.mentions = message.mentions;
+				m.channels = message.channels;
+			}
 		})
 	);
 
@@ -22,6 +28,10 @@ const changeMessageStatus = async(id, tmid, status) => {
 		successBatch.push(
 			threadMessageRecord.prepareUpdate((tm) => {
 				tm.status = status;
+				if (message) {
+					tm.mentions = message.mentions;
+					tm.channels = message.channels;
+				}
 			})
 		);
 	}
@@ -36,35 +46,61 @@ const changeMessageStatus = async(id, tmid, status) => {
 };
 
 export async function sendMessageCall(message) {
-	const {
-		id: _id, subscription: { id: rid }, msg, tmid
-	} = message;
+	const { _id, tmid } = message;
 	try {
 		const sdk = this.shareSDK || this.sdk;
 		// RC 0.60.0
-		await sdk.post('chat.sendMessage', {
-			message: {
-				_id, rid, msg, tmid
-			}
+		const result = await sdk.post('chat.sendMessage', { message });
+		if (result.success) {
+			return changeMessageStatus(_id, tmid, messagesStatus.SENT, result.message);
+		}
+	} catch {
+		// do nothing
+	}
+	return changeMessageStatus(_id, tmid, messagesStatus.ERROR);
+}
+
+export async function resendMessage(message, tmid) {
+	const db = database.active;
+	try {
+		await db.action(async() => {
+			await message.update((m) => {
+				m.status = messagesStatus.TEMP;
+			});
 		});
-		await changeMessageStatus(_id, tmid, messagesStatus.SENT);
+		let m = {
+			_id: message.id,
+			rid: message.subscription.id,
+			msg: message.msg
+		};
+		if (tmid) {
+			m = {
+				...m,
+				tmid
+			};
+		}
+		m = await Encryption.encryptMessage(m);
+		await sendMessageCall.call(this, m);
 	} catch (e) {
-		await changeMessageStatus(_id, tmid, messagesStatus.ERROR);
+		log(e);
 	}
 }
 
-export default async function(rid, msg, tmid, user) {
+export default async function(rid, msg, tmid, user, tshow) {
 	try {
 		const db = database.active;
-		const subsCollection = db.collections.get('subscriptions');
-		const msgCollection = db.collections.get('messages');
-		const threadCollection = db.collections.get('threads');
-		const threadMessagesCollection = db.collections.get('thread_messages');
+		const subsCollection = db.get('subscriptions');
+		const msgCollection = db.get('messages');
+		const threadCollection = db.get('threads');
+		const threadMessagesCollection = db.get('thread_messages');
 		const messageId = random(17);
 		const batch = [];
-		const message = {
-			id: messageId, subscription: { id: rid }, msg, tmid
+
+		let message = {
+			_id: messageId, rid, msg, tmid, tshow
 		};
+		message = await Encryption.encryptMessage(message);
+
 		const messageDate = new Date();
 		let tMessageRecord;
 
@@ -95,6 +131,10 @@ export default async function(rid, msg, tmid, user) {
 							tm._updatedAt = messageDate;
 							tm.status = messagesStatus.SENT; // Original message was sent already
 							tm.u = tMessageRecord.u;
+							tm.t = message.t;
+							if (message.t === E2E_MESSAGE_TYPE) {
+								tm.e2e = E2E_STATUS.DONE;
+							}
 						})
 					);
 				}
@@ -111,8 +151,13 @@ export default async function(rid, msg, tmid, user) {
 						tm.status = messagesStatus.TEMP;
 						tm.u = {
 							_id: user.id || '1',
-							username: user.username
+							username: user.username,
+							name: user.name
 						};
+						tm.t = message.t;
+						if (message.t === E2E_MESSAGE_TYPE) {
+							tm.e2e = E2E_STATUS.DONE;
+						}
 					})
 				);
 			} catch (e) {
@@ -131,12 +176,18 @@ export default async function(rid, msg, tmid, user) {
 				m.status = messagesStatus.TEMP;
 				m.u = {
 					_id: user.id || '1',
-					username: user.username
+					username: user.username,
+					name: user.name
 				};
-				if (tmid) {
+				if (tmid && tMessageRecord) {
 					m.tmid = tmid;
-					m.tlm = messageDate;
+					// m.tlm = messageDate; // I don't think this is necessary... leaving it commented just in case...
 					m.tmsg = tMessageRecord.msg;
+					m.tshow = tshow;
+				}
+				m.t = message.t;
+				if (message.t === E2E_MESSAGE_TYPE) {
+					m.e2e = E2E_STATUS.DONE;
 				}
 			})
 		);

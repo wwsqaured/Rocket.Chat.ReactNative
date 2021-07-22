@@ -2,90 +2,59 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { FlatList } from 'react-native';
 import { connect } from 'react-redux';
-import { SafeAreaView, NavigationActions } from 'react-navigation';
+import RNRestart from 'react-native-restart';
 
 import RocketChat from '../../lib/rocketchat';
-import I18n from '../../i18n';
-import Loading from '../../containers/Loading';
+import I18n, { LANGUAGES, isRTL } from '../../i18n';
 import { showErrorAlert } from '../../utils/info';
-import log from '../../utils/log';
+import log, { logEvent, events } from '../../utils/log';
 import { setUser as setUserAction } from '../../actions/login';
 import StatusBar from '../../containers/StatusBar';
-import { CustomIcon } from '../../lib/Icons';
-import sharedStyles from '../Styles';
-import ListItem from '../../containers/ListItem';
-import Separator from '../../containers/Separator';
+import * as List from '../../containers/List';
 import { themes } from '../../constants/colors';
 import { withTheme } from '../../theme';
-import { themedHeader } from '../../utils/navigation';
-
-const LANGUAGES = [
-	{
-		label: '简体中文',
-		value: 'zh-CN'
-	}, {
-		label: 'Deutsch',
-		value: 'de'
-	}, {
-		label: 'English',
-		value: 'en'
-	}, {
-		label: 'Français',
-		value: 'fr'
-	}, {
-		label: 'Português (BR)',
-		value: 'pt-BR'
-	}, {
-		label: 'Português (PT)',
-		value: 'pt-PT'
-	}, {
-		label: 'Russian',
-		value: 'ru'
-	}
-];
+import { appStart as appStartAction, ROOT_LOADING, ROOT_INSIDE } from '../../actions/app';
+import { getUserSelector } from '../../selectors/login';
+import database from '../../lib/database';
+import SafeAreaView from '../../containers/SafeAreaView';
 
 class LanguageView extends React.Component {
-	static navigationOptions = ({ screenProps }) => ({
-		title: I18n.t('Change_Language'),
-		...themedHeader(screenProps.theme)
+	static navigationOptions = () => ({
+		title: I18n.t('Change_Language')
 	})
 
 	static propTypes = {
-		userLanguage: PropTypes.string,
-		navigation: PropTypes.object,
+		user: PropTypes.object,
 		setUser: PropTypes.func,
+		appStart: PropTypes.func,
 		theme: PropTypes.string
 	}
 
 	constructor(props) {
 		super(props);
 		this.state = {
-			language: props.userLanguage ? props.userLanguage : 'en',
-			saving: false
+			language: props.user ? props.user.language : 'en'
 		};
 	}
 
 	shouldComponentUpdate(nextProps, nextState) {
-		const { language, saving } = this.state;
-		const { userLanguage, theme } = this.props;
+		const { language } = this.state;
+		const { user, theme } = this.props;
 		if (nextProps.theme !== theme) {
 			return true;
 		}
 		if (nextState.language !== language) {
 			return true;
 		}
-		if (nextState.saving !== saving) {
-			return true;
-		}
-		if (nextProps.userLanguage !== userLanguage) {
+		if (nextProps.user.language !== user.language) {
 			return true;
 		}
 		return false;
 	}
 
 	formIsChanged = (language) => {
-		const { userLanguage } = this.props;
-		return (userLanguage !== language);
+		const { user } = this.props;
+		return (user.language !== language);
 	}
 
 	submit = async(language) => {
@@ -93,14 +62,30 @@ class LanguageView extends React.Component {
 			return;
 		}
 
-		this.setState({ saving: true });
+		const { appStart, user } = this.props;
 
-		const { userLanguage, setUser, navigation } = this.props;
+		const shouldRestart = isRTL(language) || isRTL(user.language);
+
+		await appStart({ root: ROOT_LOADING, text: I18n.t('Change_language_loading') });
+
+		// shows loading for at least 300ms
+		await Promise.all([this.changeLanguage(language), new Promise(resolve => setTimeout(resolve, 300))]);
+
+		if (shouldRestart) {
+			await RNRestart.Restart();
+		} else {
+			await appStart({ root: ROOT_INSIDE });
+		}
+	}
+
+	changeLanguage = async(language) => {
+		logEvent(events.LANG_SET_LANGUAGE);
+		const { user, setUser } = this.props;
 
 		const params = {};
 
 		// language
-		if (userLanguage !== language) {
+		if (user.language !== language) {
 			params.language = language;
 		}
 
@@ -108,82 +93,71 @@ class LanguageView extends React.Component {
 			await RocketChat.saveUserPreferences(params);
 			setUser({ language: params.language });
 
-			this.setState({ saving: false });
-			setTimeout(() => {
-				navigation.reset([NavigationActions.navigate({ routeName: 'SettingsView' })], 0);
-				navigation.navigate('RoomsListView');
-			}, 300);
+			const serversDB = database.servers;
+			const usersCollection = serversDB.get('users');
+			await serversDB.action(async() => {
+				try {
+					const userRecord = await usersCollection.find(user.id);
+					await userRecord.update((record) => {
+						record.language = params.language;
+					});
+				} catch (e) {
+					logEvent(events.LANG_SET_LANGUAGE_F);
+				}
+			});
 		} catch (e) {
-			this.setState({ saving: false });
-			setTimeout(() => {
-				showErrorAlert(I18n.t('There_was_an_error_while_action', { action: I18n.t('saving_preferences') }));
-				log(e);
-			}, 300);
+			logEvent(events.LANG_SET_LANGUAGE_F);
+			showErrorAlert(I18n.t('There_was_an_error_while_action', { action: I18n.t('saving_preferences') }));
+			log(e);
 		}
-	}
-
-	renderSeparator = () => {
-		const { theme } = this.props;
-		return <Separator theme={theme} />;
 	}
 
 	renderIcon = () => {
 		const { theme } = this.props;
-		return <CustomIcon name='check' size={20} style={{ color: themes[theme].tintColor }} />;
+		return <List.Icon name='check' color={themes[theme].tintColor} />;
 	}
 
 	renderItem = ({ item }) => {
 		const { value, label } = item;
 		const { language } = this.state;
-		const { theme } = this.props;
 		const isSelected = language === value;
 
 		return (
-			<ListItem
+			<List.Item
 				title={label}
 				onPress={() => this.submit(value)}
 				testID={`language-view-${ value }`}
 				right={isSelected ? this.renderIcon : null}
-				theme={theme}
+				translateTitle={false}
 			/>
 		);
 	}
 
 	render() {
-		const { saving } = this.state;
-		const { theme } = this.props;
 		return (
-			<SafeAreaView
-				style={[sharedStyles.container, { backgroundColor: themes[theme].auxiliaryBackground }]}
-				forceInset={{ vertical: 'never' }}
-				testID='language-view'
-			>
-				<StatusBar theme={theme} />
+			<SafeAreaView testID='language-view'>
+				<StatusBar />
 				<FlatList
 					data={LANGUAGES}
 					keyExtractor={item => item.value}
-					contentContainerStyle={[
-						sharedStyles.listContentContainer,
-						{
-							backgroundColor: themes[theme].auxiliaryBackground,
-							borderColor: themes[theme].separatorColor
-						}
-					]}
+					ListHeaderComponent={List.Separator}
+					ListFooterComponent={List.Separator}
+					contentContainerStyle={List.styles.contentContainerStyleFlatList}
 					renderItem={this.renderItem}
-					ItemSeparatorComponent={this.renderSeparator}
+					ItemSeparatorComponent={List.Separator}
 				/>
-				<Loading visible={saving} />
 			</SafeAreaView>
 		);
 	}
 }
 
 const mapStateToProps = state => ({
-	userLanguage: state.login.user && state.login.user.language
+	user: getUserSelector(state)
 });
 
 const mapDispatchToProps = dispatch => ({
-	setUser: params => dispatch(setUserAction(params))
+	setUser: params => dispatch(setUserAction(params)),
+	appStart: params => dispatch(appStartAction(params))
 });
 
 export default connect(mapStateToProps, mapDispatchToProps)(withTheme(LanguageView));

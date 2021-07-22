@@ -1,8 +1,8 @@
 import EJSON from 'ejson';
-
 import PushNotification from './push';
 import store from '../../lib/createStore';
 import { deepLinkingOpen } from '../../actions/deepLinking';
+import { isFDroidBuild } from '../../constants/environment';
 
 export const onNotification = (notification) => {
 	if (notification) {
@@ -10,18 +10,23 @@ export const onNotification = (notification) => {
 		if (data) {
 			try {
 				const {
-					rid, name, sender, type, host
+					rid, name, sender, type, host, messageType, messageId
 				} = EJSON.parse(data.ejson);
 
 				const types = {
-					c: 'channel', d: 'direct', p: 'group'
+					c: 'channel', d: 'direct', p: 'group', l: 'channels'
 				};
-				const roomName = type === 'd' ? sender.username : name;
+				let roomName = type === 'd' ? sender.username : name;
+				if (type === 'l') {
+					roomName = sender.name;
+				}
 
 				const params = {
 					host,
 					rid,
-					path: `${ types[type] }/${ roomName }`
+					messageId,
+					path: `${ types[type] }/${ roomName }`,
+					isCall: messageType === 'jitsi_call_started'
 				};
 				store.dispatch(deepLinkingOpen(params));
 			} catch (e) {
@@ -34,8 +39,10 @@ export const onNotification = (notification) => {
 export const getDeviceToken = () => PushNotification.getDeviceToken();
 export const setBadgeCount = count => PushNotification.setBadgeCount(count);
 export const initializePushNotifications = () => {
-	setBadgeCount();
-	return PushNotification.configure({
-		onNotification
-	});
+	if (!isFDroidBuild) {
+		setBadgeCount();
+		return PushNotification.configure({
+			onNotification
+		});
+	}
 };

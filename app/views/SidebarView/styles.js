@@ -13,7 +13,7 @@ export default StyleSheet.create({
 	itemCurrent: {
 		backgroundColor: '#E1E5E8'
 	},
-	itemLeft: {
+	itemHorizontal: {
 		marginHorizontal: 10,
 		width: 30,
 		alignItems: 'center'
@@ -48,14 +48,8 @@ export default StyleSheet.create({
 		fontSize: 14,
 		...sharedStyles.textMedium
 	},
-	headerIcon: {
-		paddingHorizontal: 10
-	},
 	avatar: {
 		marginHorizontal: 10
-	},
-	status: {
-		marginRight: 5
 	},
 	currentServerText: {
 		fontSize: 14,

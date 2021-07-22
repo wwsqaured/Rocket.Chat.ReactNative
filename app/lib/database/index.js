@@ -1,7 +1,6 @@
 import { Database } from '@nozbe/watermelondb';
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
 import logger from '@nozbe/watermelondb/utils/common/logger';
-import RNFetchBlob from 'rn-fetch-blob';
 
 import Subscription from './model/Subscription';
 import Room from './model/Room';
@@ -16,29 +15,69 @@ import Role from './model/Role';
 import Permission from './model/Permission';
 import SlashCommand from './model/SlashCommand';
 import User from './model/User';
-import Server from './model/Server';
+
+import LoggedUser from './model/servers/User';
+import Server from './model/servers/Server';
+import ServersHistory from './model/ServersHistory';
 
 import serversSchema from './schema/servers';
 import appSchema from './schema/app';
 
 import migrations from './model/migrations';
+import serversMigrations from './model/servers/migrations';
 
 import { isIOS } from '../../utils/deviceInfo';
+import appGroup from '../../utils/appGroup';
+import { isOfficial } from '../../constants/environment';
 
-const appGroupPath = isIOS ? `${ RNFetchBlob.fs.syncPathAppGroup('group.ios.chat.rocket') }/` : '';
+const appGroupPath = isIOS ? appGroup.path : '';
 
 if (__DEV__ && isIOS) {
 	console.log(appGroupPath);
 }
 
+const getDatabasePath = name => `${ appGroupPath }${ name }${ isOfficial ? '' : '-experimental' }.db`;
+
+export const getDatabase = (database = '') => {
+	const path = database.replace(/(^\w+:|^)\/\//, '').replace(/\//g, '.');
+	const dbName = getDatabasePath(path);
+
+	const adapter = new SQLiteAdapter({
+		dbName,
+		schema: appSchema,
+		migrations
+	});
+
+	return new Database({
+		adapter,
+		modelClasses: [
+			Subscription,
+			Room,
+			Message,
+			Thread,
+			ThreadMessage,
+			CustomEmoji,
+			FrequentlyUsedEmoji,
+			Upload,
+			Setting,
+			Role,
+			Permission,
+			SlashCommand,
+			User
+		],
+		actionsEnabled: true
+	});
+};
+
 class DB {
 	databases = {
 		serversDB: new Database({
 			adapter: new SQLiteAdapter({
-				dbName: `${ appGroupPath }default.db`,
-				schema: serversSchema
+				dbName: getDatabasePath('default'),
+				schema: serversSchema,
+				migrations: serversMigrations
 			}),
-			modelClasses: [Server, User],
+			modelClasses: [Server, LoggedUser, ServersHistory],
 			actionsEnabled: true
 		})
 	}
@@ -60,8 +99,8 @@ class DB {
 	}
 
 	setShareDB(database = '') {
-		const path = database.replace(/(^\w+:|^)\/\//, '').replace(/\//, '.');
-		const dbName = `${ appGroupPath }${ path }.db`;
+		const path = database.replace(/(^\w+:|^)\/\//, '').replace(/\//g, '.');
+		const dbName = getDatabasePath(path);
 
 		const adapter = new SQLiteAdapter({
 			dbName,
@@ -76,40 +115,19 @@ class DB {
 				Message,
 				Thread,
 				ThreadMessage,
-				Upload
+				Upload,
+				Permission,
+				CustomEmoji,
+				FrequentlyUsedEmoji,
+				Setting,
+				User
 			],
 			actionsEnabled: true
 		});
 	}
 
-	setActiveDB(database = '') {
-		const path = database.replace(/(^\w+:|^)\/\//, '').replace(/\//, '.');
-		const dbName = `${ appGroupPath }${ path }.db`;
-
-		const adapter = new SQLiteAdapter({
-			dbName,
-			schema: appSchema,
-			migrations
-		});
-
-		this.databases.activeDB = new Database({
-			adapter,
-			modelClasses: [
-				Subscription,
-				Room,
-				Message,
-				Thread,
-				ThreadMessage,
-				CustomEmoji,
-				FrequentlyUsedEmoji,
-				Upload,
-				Setting,
-				Role,
-				Permission,
-				SlashCommand
-			],
-			actionsEnabled: true
-		});
+	setActiveDB(database) {
+		this.databases.activeDB = getDatabase(database);
 	}
 }
 

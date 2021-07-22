@@ -5,8 +5,10 @@ import {
 
 import { sanitizer } from '../utils';
 
+export const TABLE_NAME = 'threads';
+
 export default class Thread extends Model {
-	static table = 'threads';
+	static table = TABLE_NAME;
 
 	static associations = {
 		subscriptions: { type: 'belongs_to', key: 'rid' }
@@ -29,6 +31,8 @@ export default class Thread extends Model {
 	@field('groupable') groupable;
 
 	@field('avatar') avatar;
+
+	@field('emoji') emoji;
 
 	@json('attachments', sanitizer) attachments;
 
@@ -71,4 +75,6 @@ export default class Thread extends Model {
 	@field('auto_translate') autoTranslate;
 
 	@json('translations', sanitizer) translations;
+
+	@field('e2e') e2e;
 }

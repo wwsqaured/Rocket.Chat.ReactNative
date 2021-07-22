@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
 });
 
 const ReplyPreview = React.memo(({
-	message, Message_TimeFormat, baseUrl, username, useMarkdown, replying, getCustomEmoji, close, theme
+	message, Message_TimeFormat, baseUrl, username, replying, getCustomEmoji, close, theme, useRealName
 }) => {
 	if (!replying) {
 		return null;
@@ -58,7 +58,7 @@ const ReplyPreview = React.memo(({
 		>
 			<View style={[styles.messageContainer, { backgroundColor: themes[theme].chatComponentBackground }]}>
 				<View style={styles.header}>
-					<Text style={[styles.username, { color: themes[theme].tintColor }]}>{message.u.username}</Text>
+					<Text style={[styles.username, { color: themes[theme].tintColor }]}>{useRealName ? message.u?.name : message.u?.username}</Text>
 					<Text style={[styles.time, { color: themes[theme].auxiliaryText }]}>{time}</Text>
 				</View>
 				<Markdown
@@ -67,32 +67,31 @@ const ReplyPreview = React.memo(({
 					username={username}
 					getCustomEmoji={getCustomEmoji}
 					numberOfLines={1}
-					useMarkdown={useMarkdown}
 					preview
 					theme={theme}
 				/>
 			</View>
-			<CustomIcon name='cross' color={themes[theme].auxiliaryText} size={20} style={styles.close} onPress={close} />
+			<CustomIcon name='close' color={themes[theme].auxiliaryText} size={20} style={styles.close} onPress={close} />
 		</View>
 	);
-}, (prevProps, nextProps) => prevProps.replying === nextProps.replying && prevProps.theme === nextProps.theme);
+}, (prevProps, nextProps) => prevProps.replying === nextProps.replying && prevProps.theme === nextProps.theme && prevProps.message.id === nextProps.message.id);
 
 ReplyPreview.propTypes = {
 	replying: PropTypes.bool,
-	useMarkdown: PropTypes.bool,
 	message: PropTypes.object.isRequired,
 	Message_TimeFormat: PropTypes.string.isRequired,
 	close: PropTypes.func.isRequired,
 	baseUrl: PropTypes.string.isRequired,
 	username: PropTypes.string.isRequired,
 	getCustomEmoji: PropTypes.func,
-	theme: PropTypes.string
+	theme: PropTypes.string,
+	useRealName: PropTypes.bool
 };
 
 const mapStateToProps = state => ({
-	useMarkdown: state.markdown.useMarkdown,
 	Message_TimeFormat: state.settings.Message_TimeFormat,
-	baseUrl: state.settings.Site_Url || state.server ? state.server.server : ''
+	baseUrl: state.server.server,
+	useRealName: state.settings.UI_Use_Real_Name
 });
 
 export default connect(mapStateToProps)(ReplyPreview);

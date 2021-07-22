@@ -1,10 +1,11 @@
 import * as types from './actionsTypes';
 
-export function loginRequest(credentials, logoutOnError) {
+export function loginRequest(credentials, logoutOnError, isFromWebView) {
 	return {
 		type: types.LOGIN.REQUEST,
 		credentials,
-		logoutOnError
+		logoutOnError,
+		isFromWebView
 	};
 }
 
@@ -22,9 +23,10 @@ export function loginFailure(err) {
 	};
 }
 
-export function logout() {
+export function logout(forcedByServer = false) {
 	return {
-		type: types.LOGOUT
+		type: types.LOGOUT,
+		forcedByServer
 	};
 }
 
@@ -46,5 +48,12 @@ export function setPreference(preference) {
 	return {
 		type: types.LOGIN.SET_PREFERENCE,
 		preference
+	};
+}
+
+export function setLocalAuthenticated(isLocalAuthenticated) {
+	return {
+		type: types.LOGIN.SET_LOCAL_AUTHENTICATED,
+		isLocalAuthenticated
 	};
 }

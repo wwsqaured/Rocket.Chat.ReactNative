@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
 		...sharedStyles.textRegular
 	},
 	cancel: {
-		marginRight: 10
+		marginRight: 15
 	},
 	cancelText: {
 		...sharedStyles.textRegular,
@@ -47,7 +47,7 @@ const styles = StyleSheet.create({
 
 const CancelButton = (onCancelPress, theme) => (
 	<Touchable onPress={onCancelPress} style={styles.cancel}>
-		<Text style={[styles.cancelText, { color: themes[theme].tintColor }]}>{I18n.t('Cancel')}</Text>
+		<Text style={[styles.cancelText, { color: themes[theme].headerTintColor }]}>{I18n.t('Cancel')}</Text>
 	</Touchable>
 );
 
@@ -61,7 +61,7 @@ const SearchBox = ({
 		]}
 	>
 		<View style={[styles.searchBox, { backgroundColor: themes[theme].searchboxBackground }]}>
-			<CustomIcon name='magnifier' size={14} color={themes[theme].auxiliaryText} />
+			<CustomIcon name='search' size={14} color={themes[theme].auxiliaryText} />
 			<TextInput
 				ref={inputRef}
 				autoCapitalize='none'

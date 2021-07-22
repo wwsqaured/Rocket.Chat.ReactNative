@@ -1,50 +1,74 @@
 import React from 'react';
-import { Image, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import PropTypes from 'prop-types';
 import { CustomIcon } from '../lib/Icons';
-import { themes } from '../constants/colors';
+import { STATUS_COLORS, themes } from '../constants/colors';
+import Status from './Status/Status';
+import { withTheme } from '../theme';
 
 const styles = StyleSheet.create({
-	style: {
-		marginRight: 7,
-		marginTop: 3
-	},
-	discussion: {
-		marginRight: 6
+	icon: {
+		marginRight: 4
 	}
 });
 
 const RoomTypeIcon = React.memo(({
-	type, size, style, theme
+	type, size, isGroupChat, status, style, theme, teamMain
 }) => {
 	if (!type) {
 		return null;
 	}
 
-	const color = themes[theme].auxiliaryText;
+	const color = themes[theme].titleText;
+	const iconStyle = [
+		styles.icon,
+		{ color },
+		style
+	];
 
-	if (type === 'discussion') {
-		// FIXME: These are temporary only. We should have all room icons on <Customicon />, but our design team is still working on this.
-		return <CustomIcon name='chat' size={13} style={[styles.style, styles.iconColor, styles.discussion, { color }]} />;
+	if (type === 'd' && !isGroupChat) {
+		return <Status style={[iconStyle, { color: STATUS_COLORS[status] ?? STATUS_COLORS.offline }]} size={size} status={status} />;
 	}
 
-	if (type === 'c') {
-		return <Image source={{ uri: 'hashtag' }} style={[styles.style, style, { width: size, height: size, tintColor: color }]} />;
-	} if (type === 'd') {
-		return <CustomIcon name='at' size={13} style={[styles.style, styles.discussion, { color }]} />;
+	// TODO: move this to a separate function
+	let icon = 'channel-private';
+	if (teamMain) {
+		icon = `teams${ type === 'p' ? '-private' : '' }`;
+	} else if (type === 'discussion') {
+		icon = 'discussions';
+	} else if (type === 'c') {
+		icon = 'channel-public';
+	} else if (type === 'd') {
+		if (isGroupChat) {
+			icon = 'message';
+		} else {
+			icon = 'mention';
+		}
+	} else if (type === 'l') {
+		icon = 'omnichannel';
 	}
-	return <Image source={{ uri: 'lock' }} style={[styles.style, style, { width: size, height: size, tintColor: color }]} />;
+
+	return (
+		<CustomIcon
+			name={icon}
+			size={size}
+			style={iconStyle}
+		/>
+	);
 });
 
 RoomTypeIcon.propTypes = {
 	theme: PropTypes.string,
 	type: PropTypes.string,
+	isGroupChat: PropTypes.bool,
+	teamMain: PropTypes.bool,
+	status: PropTypes.string,
 	size: PropTypes.number,
 	style: PropTypes.object
 };
 
 RoomTypeIcon.defaultProps = {
-	size: 10
+	size: 16
 };
 
-export default RoomTypeIcon;
+export default withTheme(RoomTypeIcon);
