@@ -22,9 +22,9 @@ interface IMultiSelect {
 	context?: number;
 	loading?: boolean;
 	multiselect?: boolean;
-	onSearch: Function;
-	onClose: Function;
-	inputStyle: object;
+	onSearch?: () => void;
+	onClose?: () => void;
+	inputStyle?: object;
 	value?: any[];
 	disabled?: boolean | object;
 	theme: string;

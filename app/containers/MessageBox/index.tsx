@@ -27,7 +27,7 @@ import LeftButtons from './LeftButtons';
 // @ts-ignore
 // eslint-disable-next-line import/extensions,import/no-unresolved
 import RightButtons from './RightButtons';
-import { isAndroid, isIOS, isTablet } from '../../utils/deviceInfo';
+import { isAndroid, isTablet } from '../../utils/deviceInfo';
 import { canUploadFile } from '../../utils/media';
 import EventEmiter from '../../utils/events';
 import { KEY_COMMAND, handleCommandShowUpload, handleCommandSubmit, handleCommandTyping } from '../../commands';
@@ -47,6 +47,9 @@ import Navigation from '../../lib/Navigation';
 import { withActionSheet } from '../ActionSheet';
 import { sanitizeLikeString } from '../../lib/database/utils';
 import { CustomIcon } from '../../lib/Icons';
+import { IMessage } from '../../definitions/IMessage';
+import { forceJpgExtension } from './forceJpgExtension';
+import { IUser } from '../../definitions';
 
 if (isAndroid) {
 	require('./EmojiKeyboard');
@@ -70,24 +73,15 @@ const videoPickerConfig = {
 	mediaType: 'video'
 };
 
-interface IMessageBoxProps {
+export interface IMessageBoxProps {
 	rid: string;
 	baseUrl: string;
-	message: {
-		u: {
-			username: string;
-		};
-		id: any;
-	};
+	message: IMessage;
 	replying: boolean;
 	editing: boolean;
 	threadsEnabled: boolean;
 	isFocused(): boolean;
-	user: {
-		id: string;
-		username: string;
-		token: string;
-	};
+	user: IUser;
 	roomType: string;
 	tmid: string;
 	replyWithMention: boolean;
@@ -129,18 +123,6 @@ interface IMessageBoxState {
 	mentionLoading: boolean;
 	permissionToUpload: boolean;
 }
-
-const forceJpgExtension = (attachment: ImageOrVideo) => {
-	if (isIOS && attachment.mime === 'image/jpeg' && attachment.filename) {
-		const regex = new RegExp(/.heic$/i);
-		if (attachment.filename.match(regex)) {
-			attachment.filename = attachment.filename.replace(regex, '.jpg');
-		} else {
-			attachment.filename += '.jpg';
-		}
-	}
-	return attachment;
-};
 
 class MessageBox extends Component<IMessageBoxProps, IMessageBoxState> {
 	private text: string;
@@ -623,7 +605,7 @@ class MessageBox extends Component<IMessageBoxProps, IMessageBoxState> {
 
 	getCannedResponses = debounce(async (text?: string) => {
 		const res = await RocketChat.getListCannedResponse({ text });
-		this.setState({ mentions: res?.cannedResponses || [], mentionLoading: false });
+		this.setState({ mentions: res.success ? res.cannedResponses : [], mentionLoading: false });
 	}, 500);
 
 	focus = () => {
@@ -940,8 +922,8 @@ class MessageBox extends Component<IMessageBoxProps, IMessageBoxState> {
 				let msg = `[ ](${permalink}) `;
 
 				// if original message wasn't sent by current user and neither from a direct room
-				if (user.username !== replyingMessage.u.username && roomType !== 'd' && replyWithMention) {
-					msg += `@${replyingMessage.u.username} `;
+				if (user.username !== replyingMessage?.u?.username && roomType !== 'd' && replyWithMention) {
+					msg += `@${replyingMessage?.u?.username} `;
 				}
 
 				msg = `${msg} ${message}`;
@@ -1083,7 +1065,6 @@ class MessageBox extends Component<IMessageBoxProps, IMessageBoxState> {
 
 		const replyPreview = !recording ? (
 			<ReplyPreview
-				// @ts-ignore
 				message={message}
 				close={replyCancel}
 				username={user.username}
@@ -1200,5 +1181,5 @@ const mapStateToProps = (state: any) => ({
 const dispatchToProps = {
 	typing: (rid: any, status: any) => userTypingAction(rid, status)
 };
-// @ts-ignore
+
 export default connect(mapStateToProps, dispatchToProps, null, { forwardRef: true })(withActionSheet(MessageBox)) as any;

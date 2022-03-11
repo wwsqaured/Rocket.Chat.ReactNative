@@ -87,7 +87,7 @@ const Message = React.memo((props: IMessage) => {
 				<View style={[styles.messageContent, props.isHeader && styles.messageContentWithHeader]}>
 					<MessageInner {...props} />
 				</View>
-				<ReadReceipt isReadReceiptEnabled={props.isReadReceiptEnabled} unread={props.unread} theme={props.theme} />
+				<ReadReceipt isReadReceiptEnabled={props.isReadReceiptEnabled} unread={props.unread || false} theme={props.theme} />
 			</View>
 		</View>
 	);
@@ -107,7 +107,7 @@ const MessageTouchable = React.memo((props: IMessageTouchable & IMessage) => {
 		<Touchable
 			onLongPress={onLongPress}
 			onPress={onPress}
-			disabled={(props.isInfo && !props.isThreadReply) || props.archived || props.isTemp}
+			disabled={(props.isInfo && !props.isThreadReply) || props.archived || props.isTemp || props.type === 'jitsi_call_started'}
 			style={{ backgroundColor: props.highlighted ? themes[props.theme].headerBackground : null }}>
 			<View>
 				<Message {...props} />

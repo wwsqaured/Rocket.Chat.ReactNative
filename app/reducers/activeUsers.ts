@@ -1,9 +1,9 @@
+import { ACTIVE_USERS } from '../actions/actionsTypes';
 import { TApplicationActions } from '../definitions';
-import { SET_ACTIVE_USERS } from '../actions/actionsTypes';
+import { UserStatus } from '../definitions/UserStatus';
 
-type TUserStatus = 'online' | 'offline';
 export interface IActiveUser {
-	status: TUserStatus;
+	status: UserStatus;
 	statusText: string;
 }
 
@@ -15,11 +15,13 @@ export const initialState: IActiveUsers = {};
 
 export default function activeUsers(state = initialState, action: TApplicationActions): IActiveUsers {
 	switch (action.type) {
-		case SET_ACTIVE_USERS:
+		case ACTIVE_USERS.SET:
 			return {
 				...state,
 				...action.activeUsers
 			};
+		case ACTIVE_USERS.CLEAR:
+			return initialState;
 		default:
 			return state;
 	}

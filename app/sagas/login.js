@@ -15,7 +15,6 @@ import EventEmitter from '../utils/events';
 import { inviteLinksRequest } from '../actions/inviteLinks';
 import { showErrorAlert } from '../utils/info';
 import { localAuthenticate } from '../utils/localAuthentication';
-import { setActiveUsers } from '../actions/activeUsers';
 import { encryptionInit, encryptionStop } from '../actions/encryption';
 import UserPreferences from '../lib/userPreferences';
 import { inquiryRequest, inquiryReset } from '../ee/omnichannel/actions/inquiry';
@@ -100,7 +99,6 @@ const registerPushToken = function* registerPushToken() {
 };
 
 const fetchUsersPresence = function* fetchUserPresence() {
-	yield RocketChat.getUsersPresence();
 	RocketChat.subscribeUsersPresence();
 };
 
@@ -163,8 +161,8 @@ const handleLoginSuccess = function* handleLoginSuccess({ user }) {
 			}
 		});
 
-		yield UserPreferences.setStringAsync(`${RocketChat.TOKEN_KEY}-${server}`, user.id);
-		yield UserPreferences.setStringAsync(`${RocketChat.TOKEN_KEY}-${user.id}`, user.token);
+		UserPreferences.setString(`${RocketChat.TOKEN_KEY}-${server}`, user.id);
+		UserPreferences.setString(`${RocketChat.TOKEN_KEY}-${user.id}`, user.token);
 		yield put(setUser(user));
 		EventEmitter.emit('connected');
 
@@ -202,7 +200,7 @@ const handleLogout = function* handleLogout({ forcedByServer }) {
 				if (servers.length > 0) {
 					for (let i = 0; i < servers.length; i += 1) {
 						const newServer = servers[i].id;
-						const token = yield UserPreferences.getStringAsync(`${RocketChat.TOKEN_KEY}-${newServer}`);
+						const token = UserPreferences.getString(`${RocketChat.TOKEN_KEY}-${newServer}`);
 						if (token) {
 							yield put(selectServerRequest(newServer));
 							return;
@@ -221,11 +219,6 @@ const handleLogout = function* handleLogout({ forcedByServer }) {
 
 const handleSetUser = function* handleSetUser({ user }) {
 	setLanguage(user?.language);
-
-	if (user && user.status) {
-		const userId = yield select(state => state.login.user.id);
-		yield put(setActiveUsers({ [userId]: user }));
-	}
 
 	if (user?.statusLivechat && RocketChat.isOmnichannelModuleAvailable()) {
 		if (isOmnichannelStatusAvailable(user)) {

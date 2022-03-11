@@ -1,6 +1,7 @@
 import { put, takeLatest } from 'redux-saga/effects';
 import RNBootSplash from 'react-native-bootsplash';
 
+import { BIOMETRY_ENABLED_KEY } from '../constants/localAuthentication';
 import UserPreferences from '../lib/userPreferences';
 import { selectServerRequest } from '../actions/server';
 import { setAllPreferences } from '../actions/sortPreferences';
@@ -13,14 +14,28 @@ import { appReady, appStart } from '../actions/app';
 import { RootEnum } from '../definitions';
 
 export const initLocalSettings = function* initLocalSettings() {
-	const sortPreferences = yield RocketChat.getSortPreferences();
+	const sortPreferences = RocketChat.getSortPreferences();
 	yield put(setAllPreferences(sortPreferences));
 };
 
+const BIOMETRY_MIGRATION_KEY = 'kBiometryMigration';
+
 const restore = function* restore() {
 	try {
-		const server = yield UserPreferences.getStringAsync(RocketChat.CURRENT_SERVER);
-		let userId = yield UserPreferences.getStringAsync(`${RocketChat.TOKEN_KEY}-${server}`);
+		const server = UserPreferences.getString(RocketChat.CURRENT_SERVER);
+		let userId = UserPreferences.getString(`${RocketChat.TOKEN_KEY}-${server}`);
+
+		// Migration biometry setting from WatermelonDB to MMKV
+		// TODO: remove it after a few versions
+		const hasMigratedBiometry = UserPreferences.getBool(BIOMETRY_MIGRATION_KEY);
+		if (!hasMigratedBiometry) {
+			const serversDB = database.servers;
+			const serversCollection = serversDB.get('servers');
+			const servers = yield serversCollection.query().fetch();
+			const isBiometryEnabled = servers.some(server => !!server.biometry);
+			UserPreferences.setBool(BIOMETRY_ENABLED_KEY, isBiometryEnabled);
+			UserPreferences.setBool(BIOMETRY_MIGRATION_KEY, true);
+		}
 
 		if (!server) {
 			yield put(appStart({ root: RootEnum.ROOT_OUTSIDE }));
@@ -33,7 +48,7 @@ const restore = function* restore() {
 			if (servers.length > 0) {
 				for (let i = 0; i < servers.length; i += 1) {
 					const newServer = servers[i].id;
-					userId = yield UserPreferences.getStringAsync(`${RocketChat.TOKEN_KEY}-${newServer}`);
+					userId = UserPreferences.getString(`${RocketChat.TOKEN_KEY}-${newServer}`);
 					if (userId) {
 						return yield put(selectServerRequest(newServer));
 					}
