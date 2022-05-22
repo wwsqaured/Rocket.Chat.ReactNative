@@ -2,10 +2,10 @@ import React from 'react';
 import { StyleSheet, Text, TextInput as RNTextInput, TextInputProps, View } from 'react-native';
 import Touchable from 'react-native-platform-touchable';
 
-import { themes } from '../constants/colors';
+import { themes } from '../lib/constants';
 import I18n from '../i18n';
-import { CustomIcon } from '../lib/Icons';
-import TextInput from '../presentation/TextInput';
+import { CustomIcon } from './CustomIcon';
+import TextInput from './TextInput';
 import { useTheme } from '../theme';
 import { isIOS } from '../utils/deviceInfo';
 import sharedStyles from '../views/Styles';
@@ -47,11 +47,11 @@ const styles = StyleSheet.create({
 interface ISearchBox extends TextInputProps {
 	value?: string;
 	hasCancel?: boolean;
-	onCancelPress?: Function;
+	onCancelPress?: () => void;
 	inputRef?: React.Ref<RNTextInput>;
 }
 
-const CancelButton = ({ onCancelPress }: { onCancelPress?: Function }) => {
+const CancelButton = ({ onCancelPress }: { onCancelPress?: () => void }) => {
 	const { theme } = useTheme();
 	return (
 		<Touchable onPress={onCancelPress} style={styles.cancel}>
@@ -84,7 +84,7 @@ const SearchBox = ({ hasCancel, onCancelPress, inputRef, ...props }: ISearchBox)
 					{...props}
 				/>
 			</View>
-			{hasCancel ? <CancelButton onCancelPress={onCancelPress} /> : null}
+			{hasCancel && onCancelPress ? <CancelButton onCancelPress={onCancelPress} /> : null}
 		</View>
 	);
 };

@@ -8,19 +8,18 @@ import { dequal } from 'dequal';
 
 import { ISubscription, SubscriptionType } from '../../definitions/ISubscription';
 import { IAttachment } from '../../definitions/IAttachment';
-import RCTextInput from '../../containers/TextInput';
+import FormTextInput from '../../containers/TextInput/FormTextInput';
 import ActivityIndicator from '../../containers/ActivityIndicator';
 import Markdown from '../../containers/markdown';
 import debounce from '../../utils/debounce';
-import RocketChat from '../../lib/rocketchat';
 import Message from '../../containers/message';
 import scrollPersistTaps from '../../utils/scrollPersistTaps';
 import { IMessage } from '../../containers/message/interfaces';
 import I18n from '../../i18n';
 import StatusBar from '../../containers/StatusBar';
 import log from '../../utils/log';
-import { themes } from '../../constants/colors';
-import { withTheme } from '../../theme';
+import { themes } from '../../lib/constants';
+import { TSupportedThemes, withTheme } from '../../theme';
 import { getUserSelector } from '../../selectors/login';
 import SafeAreaView from '../../containers/SafeAreaView';
 import * as HeaderButton from '../../containers/HeaderButton';
@@ -29,10 +28,12 @@ import { sanitizeLikeString } from '../../lib/database/utils';
 import getThreadName from '../../lib/methods/getThreadName';
 import getRoomInfo, { IRoomInfoResult } from '../../lib/methods/getRoomInfo';
 import { isIOS } from '../../utils/deviceInfo';
-import { compareServerVersion } from '../../lib/utils';
 import styles from './styles';
 import { InsideStackParamList, ChatsStackParamList } from '../../stacks/types';
 import { IEmoji } from '../../definitions/IEmoji';
+import { compareServerVersion } from '../../lib/methods/helpers/compareServerVersion';
+import { IUrl } from '../../definitions';
+import { Services } from '../../lib/services';
 
 const QUERY_SIZE = 50;
 
@@ -42,12 +43,12 @@ interface ISearchMessagesViewState {
 	searchText: string;
 }
 
-interface IRoomInfoParam {
-	room: ISubscription;
-	member: any;
+export interface IRoomInfoParam {
+	room?: ISubscription;
+	member?: any;
 	rid: string;
 	t: SubscriptionType;
-	joined: boolean;
+	joined?: boolean;
 }
 
 interface INavigationOption {
@@ -69,7 +70,7 @@ interface ISearchMessagesViewProps extends INavigationOption {
 	customEmojis: {
 		[key: string]: IEmoji;
 	};
-	theme: string;
+	theme: TSupportedThemes;
 	useRealName: boolean;
 }
 class SearchMessagesView extends React.Component<ISearchMessagesViewProps, ISearchMessagesViewState> {
@@ -153,11 +154,27 @@ class SearchMessagesView extends React.Component<ISearchMessagesViewProps, ISear
 				.fetch();
 		}
 		// If it's not a encrypted room, search messages on the server
-		const result = await RocketChat.searchMessages(this.rid, searchText, QUERY_SIZE, this.offset);
+		const result = await Services.searchMessages(this.rid, searchText, QUERY_SIZE, this.offset);
 		if (result.success) {
-			return result.messages;
+			const urlRenderMessages = result.messages?.map(message => {
+				if (message.urls && message.urls.length > 0) {
+					message.urls = message.urls?.map((url, index) => {
+						if (url.meta) {
+							return {
+								_id: index,
+								title: url.meta.pageTitle,
+								description: url.meta.ogDescription,
+								image: url.meta.ogImage,
+								url: url.url
+							} as IUrl;
+						}
+						return {} as IUrl;
+					});
+				}
+				return message;
+			});
+			return urlRenderMessages;
 		}
-
 		return [];
 	};
 	getMessages = async (searchText: string, debounced?: boolean) => {
@@ -305,7 +322,7 @@ class SearchMessagesView extends React.Component<ISearchMessagesViewProps, ISear
 			<SafeAreaView style={{ backgroundColor: themes[theme].backgroundColor }} testID='search-messages-view'>
 				<StatusBar />
 				<View style={styles.searchContainer}>
-					<RCTextInput
+					<FormTextInput
 						autoFocus
 						label={I18n.t('Search')}
 						onChangeText={this.search}

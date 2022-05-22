@@ -1,18 +1,9 @@
-import random from '../../utils/random';
+import { ITriggerAction, IUserInteraction, ModalActions } from '../../containers/UIKit/interfaces';
 import EventEmitter from '../../utils/events';
 import fetch from '../../utils/fetch';
-import Navigation from '../Navigation';
-import sdk from '../rocketchat/services/sdk';
-import {
-	ActionTypes,
-	ITriggerAction,
-	ITriggerBlockAction,
-	ITriggerCancel,
-	ITriggerSubmitView,
-	IUserInteraction,
-	ModalActions
-} from '../../containers/UIKit/interfaces';
-import { TRocketChat } from '../../definitions/IRocketChat';
+import random from '../../utils/random';
+import Navigation from '../navigation/appNavigation';
+import sdk from '../services/sdk';
 
 const triggersId = new Map();
 
@@ -90,10 +81,7 @@ export const handlePayloadUserInteraction = (
 	return ModalActions.CLOSE;
 };
 
-export function triggerAction(
-	this: TRocketChat,
-	{ type, actionId, appId, rid, mid, viewId, container, ...rest }: ITriggerAction
-) {
+export function triggerAction({ type, actionId, appId, rid, mid, viewId, container, ...rest }: ITriggerAction) {
 	return new Promise<ModalActions | undefined | void>(async (resolve, reject) => {
 		const triggerId = generateTriggerId(appId);
 
@@ -138,19 +126,4 @@ export function triggerAction(
 		}
 		return reject();
 	});
-}
-
-export default function triggerBlockAction(this: TRocketChat, options: ITriggerBlockAction) {
-	return triggerAction.call(this, { type: ActionTypes.ACTION, ...options });
-}
-
-export async function triggerSubmitView(this: TRocketChat, { viewId, ...options }: ITriggerSubmitView) {
-	const result = await triggerAction.call(this, { type: ActionTypes.SUBMIT, viewId, ...options });
-	if (!result || ModalActions.CLOSE === result) {
-		Navigation.back();
-	}
-}
-
-export function triggerCancel(this: TRocketChat, { view, ...options }: ITriggerCancel) {
-	return triggerAction.call(this, { type: ActionTypes.CLOSED, view, ...options });
 }

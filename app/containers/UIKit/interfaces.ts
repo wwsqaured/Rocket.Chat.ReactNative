@@ -1,4 +1,4 @@
-import { TThemeMode } from '../../definitions/ITheme';
+import { TSupportedThemes } from '../../theme';
 
 export enum ElementTypes {
 	IMAGE = 'image',
@@ -87,10 +87,11 @@ export interface IElement {
 	imageUrl?: string;
 	appId?: string;
 	blockId?: string;
+	multiline?: boolean;
 }
 
 export interface IText {
-	type: ElementTypes;
+	type?: ElementTypes;
 	text: string;
 	emoji?: boolean;
 }
@@ -98,12 +99,15 @@ export interface IText {
 export interface Option {
 	text: IText;
 	value: string;
+	imageUrl?: string;
 }
 
 export interface IButton {
 	type: ElementTypes;
 	text: IText;
 	actionId: string;
+	blockId: string;
+	appId: string;
 	value?: any;
 	style?: any;
 }
@@ -177,7 +181,6 @@ export interface IParser {
 }
 export interface IActions extends Block {
 	parser?: IParser;
-	theme: TThemeMode;
 }
 
 export interface IContext extends Block {
@@ -191,7 +194,6 @@ export interface IDatePicker extends Partial<Block> {
 	loading: boolean;
 	value: string;
 	error: string;
-	theme: TThemeMode;
 }
 
 export interface IInput extends Partial<Block> {
@@ -199,7 +201,7 @@ export interface IInput extends Partial<Block> {
 	description: string;
 	error: string;
 	hint: string;
-	theme: TThemeMode;
+	theme: TSupportedThemes;
 }
 
 export interface IInputIndex {
@@ -217,8 +219,7 @@ export interface IThumb {
 }
 export interface IImage {
 	element: IElement;
-	theme: TThemeMode;
-	context?: number;
+	context?: BlockContext;
 }
 
 // UiKit/Overflow
@@ -226,14 +227,13 @@ export interface IOverflow extends Partial<Block> {
 	action: Function;
 	loading: boolean;
 	parser: IParser;
-	theme: TThemeMode;
 	context: number;
 }
 
 interface PropsOption {
 	onOptionPress: Function;
 	parser: IParser;
-	theme: TThemeMode;
+	theme: TSupportedThemes;
 }
 export interface IOptions extends PropsOption {
 	options: Option[];
@@ -262,12 +262,11 @@ export interface ISection {
 	text?: IText;
 	accessory?: IAccessory;
 	parser: IParser;
-	theme: TThemeMode;
 	fields?: any[];
 }
 
 export interface IFields {
 	parser: IParser;
-	theme: TThemeMode;
+	theme: TSupportedThemes;
 	fields: any[];
 }

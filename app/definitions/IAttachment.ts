@@ -2,7 +2,7 @@ import { IUser } from './IUser';
 
 export interface IAttachment {
 	ts?: string | Date;
-	title: string;
+	title?: string;
 	type?: string;
 	description?: string;
 	title_link?: string;
@@ -19,7 +19,7 @@ export interface IAttachment {
 	image_size?: number;
 	author_name?: string;
 	author_icon?: string;
-	actions?: [];
+	actions?: { type: string; msg: string; text: string }[];
 	message_link?: string;
 	text?: string;
 	short?: boolean;
@@ -55,4 +55,15 @@ export interface IServerAttachment {
 	uploading: boolean;
 	url: string;
 	user: Pick<IUser, '_id' | 'username' | 'name'>;
+}
+
+export interface IShareAttachment {
+	filename: string;
+	description?: string;
+	size: number;
+	mime?: string;
+	path: string;
+	canUpload: boolean;
+	error?: any;
+	uri: string;
 }
