@@ -27,6 +27,7 @@ import AutoTranslateView from '../../views/AutoTranslateView';
 import DirectoryView from '../../views/DirectoryView';
 import NotificationPrefView from '../../views/NotificationPreferencesView';
 import ForwardLivechatView from '../../views/ForwardLivechatView';
+import CloseLivechatView from '../../views/CloseLivechatView';
 import CannedResponsesListView from '../../views/CannedResponsesListView';
 import CannedResponseDetail from '../../views/CannedResponseDetail';
 import LivechatEditView from '../../views/LivechatEditView';
@@ -119,11 +120,7 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 		<ModalContainer navigation={navigation} theme={theme}>
 			<ModalStack.Navigator
 				screenOptions={{ ...defaultHeader, ...themedHeader(theme), ...StackAnimation } as StackNavigationOptions}>
-				<ModalStack.Screen
-					name='RoomActionsView'
-					component={RoomActionsView}
-					options={props => RoomActionsView.navigationOptions!({ ...props, isMasterDetail: true })}
-				/>
+				<ModalStack.Screen name='RoomActionsView' component={RoomActionsView} />
 				<ModalStack.Screen name='RoomInfoView' component={RoomInfoView} options={RoomInfoView.navigationOptions} />
 				<ModalStack.Screen name='SelectListView' component={SelectListView} />
 				<ModalStack.Screen name='RoomInfoEditView' component={RoomInfoEditView} options={RoomInfoEditView.navigationOptions} />
@@ -154,12 +151,9 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 					options={props => DirectoryView.navigationOptions!({ ...props, isMasterDetail: true })}
 				/>
 				<ModalStack.Screen name='QueueListView' component={QueueListView} />
-				<ModalStack.Screen
-					name='NotificationPrefView'
-					component={NotificationPrefView}
-					options={NotificationPrefView.navigationOptions}
-				/>
+				<ModalStack.Screen name='NotificationPrefView' component={NotificationPrefView} />
 				<ModalStack.Screen name='ForwardLivechatView' component={ForwardLivechatView} />
+				<ModalStack.Screen name='CloseLivechatView' component={CloseLivechatView} />
 				<ModalStack.Screen name='CannedResponsesListView' component={CannedResponsesListView} />
 				<ModalStack.Screen name='CannedResponseDetail' component={CannedResponseDetail} />
 				<ModalStack.Screen name='LivechatEditView' component={LivechatEditView} options={LivechatEditView.navigationOptions} />
@@ -191,11 +185,7 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 					options={ScreenLockConfigView.navigationOptions}
 				/>
 				<ModalStack.Screen name='StatusView' component={StatusView} />
-				<ModalStack.Screen
-					name='ProfileView'
-					component={ProfileView}
-					options={props => ProfileView.navigationOptions!({ ...props, isMasterDetail: true })}
-				/>
+				<ModalStack.Screen name='ProfileView' component={ProfileView} />
 				<ModalStack.Screen name='DisplayPrefsView' component={DisplayPrefsView} />
 				<ModalStack.Screen name='AdminPanelView' component={AdminPanelView} />
 				<ModalStack.Screen name='NewMessageView' component={NewMessageView} options={NewMessageView.navigationOptions} />

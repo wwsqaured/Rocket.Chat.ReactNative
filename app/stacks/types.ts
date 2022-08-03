@@ -11,6 +11,8 @@ import { ICannedResponse } from '../definitions/ICannedResponse';
 import { TDataSelect } from '../definitions/IDataSelect';
 import { ModalStackParamList } from './MasterDetailStack/types';
 import { TThreadModel } from '../definitions';
+import { ILivechatDepartment } from '../definitions/ILivechatDepartment';
+import { ILivechatTag } from '../definitions/ILivechatTag';
 
 export type ChatsStackParamList = {
 	ModalStackNavigator: NavigatorScreenParams<ModalStackParamList>;
@@ -114,6 +116,12 @@ export type ChatsStackParamList = {
 	ForwardLivechatView: {
 		rid: string;
 	};
+	CloseLivechatView: {
+		rid: string;
+		departmentId?: string;
+		departmentInfo?: ILivechatDepartment;
+		tagsList?: ILivechatTag[];
+	};
 	LivechatEditView: {
 		room: ISubscription;
 		roomUser: any; // TODO: Change
@@ -162,6 +170,12 @@ export type ChatsStackParamList = {
 	CannedResponseDetail: {
 		cannedResponse: ICannedResponse;
 		room: ISubscription;
+	};
+	JitsiMeetView: {
+		rid: string;
+		url: string;
+		onlyAudio?: boolean;
+		videoConf?: boolean;
 	};
 };
 
@@ -258,11 +272,6 @@ export type InsideStackParamList = {
 	};
 	ModalBlockView: {
 		data: any; // TODO: Change;
-	};
-	JitsiMeetView: {
-		rid: string;
-		url: string;
-		onlyAudio?: boolean;
 	};
 };
 

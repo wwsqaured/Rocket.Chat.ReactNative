@@ -22,6 +22,7 @@ import AutoTranslateView from '../views/AutoTranslateView';
 import DirectoryView from '../views/DirectoryView';
 import NotificationPrefView from '../views/NotificationPreferencesView';
 import ForwardLivechatView from '../views/ForwardLivechatView';
+import CloseLivechatView from '../views/CloseLivechatView';
 import LivechatEditView from '../views/LivechatEditView';
 import PickerView from '../views/PickerView';
 import ThreadMessagesView from '../views/ThreadMessagesView';
@@ -110,12 +111,9 @@ const ChatsStackNavigator = () => {
 			<ChatsStack.Screen name='MessagesView' component={MessagesView} />
 			<ChatsStack.Screen name='AutoTranslateView' component={AutoTranslateView} options={AutoTranslateView.navigationOptions} />
 			<ChatsStack.Screen name='DirectoryView' component={DirectoryView} options={DirectoryView.navigationOptions} />
-			<ChatsStack.Screen
-				name='NotificationPrefView'
-				component={NotificationPrefView}
-				options={NotificationPrefView.navigationOptions}
-			/>
+			<ChatsStack.Screen name='NotificationPrefView' component={NotificationPrefView} />
 			<ChatsStack.Screen name='ForwardLivechatView' component={ForwardLivechatView} />
+			<ChatsStack.Screen name='CloseLivechatView' component={CloseLivechatView} />
 			<ChatsStack.Screen name='LivechatEditView' component={LivechatEditView} options={LivechatEditView.navigationOptions} />
 			<ChatsStack.Screen name='PickerView' component={PickerView} options={PickerView.navigationOptions} />
 			<ChatsStack.Screen
@@ -136,6 +134,7 @@ const ChatsStackNavigator = () => {
 			<ChatsStack.Screen name='QueueListView' component={QueueListView} />
 			<ChatsStack.Screen name='CannedResponsesListView' component={CannedResponsesListView} />
 			<ChatsStack.Screen name='CannedResponseDetail' component={CannedResponseDetail} />
+			<ChatsStack.Screen name='JitsiMeetView' component={JitsiMeetView} options={{ headerShown: false }} />
 		</ChatsStack.Navigator>
 	);
 };
@@ -325,7 +324,6 @@ const InsideStackNavigator = () => {
 			<InsideStack.Screen name='StatusView' component={StatusView} />
 			<InsideStack.Screen name='ShareView' component={ShareView} />
 			<InsideStack.Screen name='ModalBlockView' component={ModalBlockView} options={ModalBlockView.navigationOptions} />
-			<InsideStack.Screen name='JitsiMeetView' component={JitsiMeetView} options={{ headerShown: false }} />
 		</InsideStack.Navigator>
 	);
 };

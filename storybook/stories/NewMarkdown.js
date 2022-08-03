@@ -2,12 +2,17 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { storiesOf } from '@storybook/react-native';
+import { Provider } from 'react-redux';
 
 import NewMarkdown from '../../app/containers/markdown/new';
 import { themes } from '../../app/lib/constants';
 import { longText } from '../utils';
+import { NavigationDecorator } from '../StoryNavigator';
+import { store } from './index';
 
-const stories = storiesOf('NewMarkdown', module);
+const stories = storiesOf('NewMarkdown', module)
+	.addDecorator(story => <Provider store={store}>{story()}</Provider>)
+	.addDecorator(NavigationDecorator);
 
 const theme = 'light';
 
@@ -16,10 +21,6 @@ const styles = StyleSheet.create({
 		marginHorizontal: 15,
 		backgroundColor: themes[theme].backgroundColor,
 		marginVertical: 50
-	},
-	separator: {
-		marginHorizontal: 10,
-		marginVertical: 10
 	}
 });
 
@@ -689,5 +690,44 @@ stories.add('Lists', () => (
 		<NewMarkdown tokens={unorederedListToken} mentions={listMentions} channels={listChannels} />
 		<NewMarkdown tokens={orderedListToken} mentions={listMentions} channels={listChannels} />
 		<NewMarkdown tokens={tasks} mentions={listMentions} channels={listChannels} />
+	</View>
+));
+
+const katex = [
+	{
+		type: 'KATEX',
+		value: ' f(x) = \\int_{-\\infty}^\\infty \\hat f(\\xi)\\,e^{2 \\pi i \\xi x} \\,d\\xi '
+	}
+];
+
+const inlineKatex = [
+	{
+		type: 'PARAGRAPH',
+		value: [
+			{
+				type: 'INLINE_KATEX',
+				value: 'This text includes math notations and should be wrapped correctly for $\\alpha$ and $\\beta$ within the view.'
+			},
+			{
+				type: 'INLINE_KATEX',
+				value: "The following formula shouldn't be inline:$$x_{1,2} = {-b \\pm \\sqrt{b^2-4ac} \\over 2a}$$"
+			},
+			{
+				type: 'INLINE_KATEX',
+				value: 'However the following formula should be inline with the text: \\( a^2 + b^2 = c^2 \\)'
+			}
+		]
+	}
+];
+
+stories.add('Katex', () => (
+	<View style={styles.container}>
+		<NewMarkdown tokens={katex} />
+	</View>
+));
+
+stories.add('Inline Katex', () => (
+	<View style={styles.container}>
+		<NewMarkdown tokens={inlineKatex} />
 	</View>
 ));
