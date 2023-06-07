@@ -5,7 +5,6 @@ import { FlatList } from 'react-native';
 import { shallowEqual } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 
-import KeyboardView from '../../containers/KeyboardView';
 import * as HeaderButton from '../../containers/HeaderButton';
 import * as List from '../../containers/List';
 import SafeAreaView from '../../containers/SafeAreaView';
@@ -56,7 +55,7 @@ const NewMessageView = () => {
 				const db = database.active;
 				const c = await db
 					.get('subscriptions')
-					.query(Q.where('t', 'd'), Q.experimentalTake(QUERY_SIZE), Q.experimentalSortBy('room_updated_at', Q.desc))
+					.query(Q.where('t', 'd'), Q.take(QUERY_SIZE), Q.sortBy('room_updated_at', Q.desc))
 					.fetch();
 				setChats(c);
 			} catch (e) {
@@ -83,31 +82,29 @@ const NewMessageView = () => {
 
 	return (
 		<SafeAreaView testID='new-message-view'>
-			<KeyboardView>
-				<StatusBar />
-				<FlatList
-					data={search.length > 0 ? search : chats}
-					keyExtractor={item => item._id || item.rid}
-					ListHeaderComponent={<HeaderNewMessage maxUsers={maxUsers} onChangeText={handleSearch} />}
-					renderItem={({ item }) => {
-						const itemSearch = item as ISearch;
-						const itemModel = item as TSubscriptionModel;
+			<StatusBar />
+			<FlatList
+				data={search.length > 0 ? search : chats}
+				keyExtractor={item => item._id || item.rid}
+				ListHeaderComponent={<HeaderNewMessage maxUsers={maxUsers} onChangeText={handleSearch} />}
+				renderItem={({ item }) => {
+					const itemSearch = item as ISearch;
+					const itemModel = item as TSubscriptionModel;
 
-						return (
-							<UserItem
-								name={useRealName && itemSearch.fname ? itemSearch.fname : itemModel.name}
-								username={itemSearch.search ? itemSearch.username : itemModel.name}
-								onPress={() => goRoom(itemModel)}
-								testID={`new-message-view-item-${item.name}`}
-							/>
-						);
-					}}
-					ItemSeparatorComponent={List.Separator}
-					ListFooterComponent={List.Separator}
-					contentContainerStyle={{ backgroundColor: colors.backgroundColor }}
-					keyboardShouldPersistTaps='always'
-				/>
-			</KeyboardView>
+					return (
+						<UserItem
+							name={useRealName && itemSearch.fname ? itemSearch.fname : itemModel.name}
+							username={itemSearch.search ? itemSearch.username : itemModel.name}
+							onPress={() => goRoom(itemModel)}
+							testID={`new-message-view-item-${item.name}`}
+						/>
+					);
+				}}
+				ItemSeparatorComponent={List.Separator}
+				ListFooterComponent={List.Separator}
+				contentContainerStyle={{ backgroundColor: colors.backgroundColor }}
+				keyboardShouldPersistTaps='always'
+			/>
 		</SafeAreaView>
 	);
 };
