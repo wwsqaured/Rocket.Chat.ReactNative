@@ -1,9 +1,10 @@
 import React from 'react';
-import { Dimensions, Linking, EmitterSubscription } from 'react-native';
+import { Dimensions, Linking } from 'react-native';
 import { initialWindowMetrics, SafeAreaProvider } from 'react-native-safe-area-context';
 import RNScreens from 'react-native-screens';
 import { Provider } from 'react-redux';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Orientation from 'react-native-orientation-locker';
 
 import { appInit, appInitLocalSettings, setMasterDetail as setMasterDetailAction } from './actions/app';
 import { deepLinkingOpen } from './actions/deepLinking';
@@ -79,7 +80,6 @@ const parseDeepLinking = (url: string) => {
 
 export default class Root extends React.Component<{}, IState> {
 	private listenerTimeout!: any;
-	private dimensionsListener?: EmitterSubscription;
 
 	constructor(props: any) {
 		super(props);
@@ -99,9 +99,11 @@ export default class Root extends React.Component<{}, IState> {
 		};
 		if (isTablet) {
 			this.initTablet();
+			Orientation.unlockAllOrientations();
+		} else {
+			Orientation.lockToPortrait();
 		}
 		setNativeTheme(theme);
-		subscribeTheme(theme, this.state.theme, this.setTheme);
 	}
 
 	componentDidMount() {
@@ -113,14 +115,12 @@ export default class Root extends React.Component<{}, IState> {
 				}
 			});
 		}, 5000);
-		this.dimensionsListener = Dimensions.addEventListener('change', this.onDimensionsChange);
+		Dimensions.addEventListener('change', this.onDimensionsChange);
 	}
 
 	componentWillUnmount() {
 		clearTimeout(this.listenerTimeout);
-		if (this.dimensionsListener) {
-			this.dimensionsListener.remove();
-		}
+		Dimensions.removeEventListener('change', this.onDimensionsChange);
 
 		unsubscribeTheme();
 	}
@@ -175,9 +175,9 @@ export default class Root extends React.Component<{}, IState> {
 		this.setState(
 			prevState => newThemeState(prevState, newTheme as IThemePreference),
 			() => {
-				const { themePreferences, theme } = this.state;
+				const { themePreferences } = this.state;
 				// subscribe to Appearance changes
-				subscribeTheme(themePreferences, theme, this.setTheme);
+				subscribeTheme(themePreferences, this.setTheme);
 			}
 		);
 	};

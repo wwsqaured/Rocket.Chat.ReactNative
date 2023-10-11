@@ -1,17 +1,16 @@
 import { Camera } from 'expo-camera';
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 
 import { useActionSheet } from '../../../containers/ActionSheet';
-import { SubscriptionType } from '../../../definitions';
 import i18n from '../../../i18n';
 import { getUserSelector } from '../../../selectors/login';
-import { getSubscriptionByRoomId } from '../../database/services/Subscription';
 import { compareServerVersion, showErrorAlert } from '../../methods/helpers';
+import log from '../../methods/helpers/log';
 import { handleAndroidBltPermission } from '../../methods/videoConf';
 import { Services } from '../../services';
 import { useAppSelector } from '../useAppSelector';
-import { useSnaps } from '../useSnaps';
 import StartACallActionSheet from './StartACallActionSheet';
+import { useVideoConfCall } from './useVideoConfCall';
 
 const availabilityErrors = {
 	NOT_CONFIGURED: 'video-conf-provider-not-configured',
@@ -19,82 +18,58 @@ const availabilityErrors = {
 	NO_APP: 'no-videoconf-provider-app'
 } as const;
 
-const handleErrors = (isAdmin: boolean, error: typeof availabilityErrors[keyof typeof availabilityErrors]) => {
-	if (isAdmin) return showErrorAlert(i18n.t(`admin-${error}-body`), i18n.t(`admin-${error}-header`));
-	return showErrorAlert(i18n.t(`${error}-body`), i18n.t(`${error}-header`));
+const handleErrors = (isAdmin: boolean, error: keyof typeof availabilityErrors) => {
+	const key = isAdmin ? `admin-${error}` : error;
+	showErrorAlert(i18n.t(`${key}-body`), i18n.t(`${key}-header`));
 };
 
-export const useVideoConf = (rid: string): { showInitCallActionSheet: () => Promise<void>; showCallOption: boolean } => {
-	const [showCallOption, setShowCallOption] = useState(false);
-
-	const serverVersion = useAppSelector(state => state.server.version);
-	const jitsiEnabled = useAppSelector(state => state.settings.Jitsi_Enabled);
-	const jitsiEnableTeams = useAppSelector(state => state.settings.Jitsi_Enable_Teams);
-	const jitsiEnableChannels = useAppSelector(state => state.settings.Jitsi_Enable_Channels);
+export const useVideoConf = (
+	rid: string
+): { showInitCallActionSheet: () => Promise<void>; callEnabled: boolean; disabledTooltip?: boolean } => {
 	const user = useAppSelector(state => getUserSelector(state));
+	const serverVersion = useAppSelector(state => state.server.version);
+
+	const { callEnabled, disabledTooltip } = useVideoConfCall(rid);
 
 	const [permission, requestPermission] = Camera.useCameraPermissions();
-
-	const isServer5OrNewer = compareServerVersion(serverVersion, 'greaterThanOrEqualTo', '5.0.0');
-
 	const { showActionSheet } = useActionSheet();
-	const snaps = useSnaps(404);
 
-	const handleShowCallOption = async () => {
-		if (isServer5OrNewer) return setShowCallOption(true);
-		const room = await getSubscriptionByRoomId(rid);
+	const isServer5OrNewer = useMemo(() => compareServerVersion(serverVersion, 'greaterThanOrEqualTo', '5.0.0'), [serverVersion]);
 
-		if (room) {
-			const isJitsiDisabledForTeams = room.teamMain && !jitsiEnableTeams;
-			const isJitsiDisabledForChannels = !room.teamMain && (room.t === 'p' || room.t === 'c') && !jitsiEnableChannels;
+	const canInitAnCall = async (): Promise<boolean> => {
+		if (!callEnabled) return false;
 
-			if (room.t === SubscriptionType.DIRECT) return setShowCallOption(!!jitsiEnabled);
-			if (room.t === SubscriptionType.CHANNEL) return setShowCallOption(!isJitsiDisabledForChannels);
-			if (room.t === SubscriptionType.GROUP) return setShowCallOption(!isJitsiDisabledForTeams);
-		}
-
-		return setShowCallOption(false);
-	};
-
-	const canInitAnCall = async () => {
 		if (isServer5OrNewer) {
 			try {
 				await Services.videoConferenceGetCapabilities();
 				return true;
 			} catch (error: any) {
-				const isAdmin = !!['admin'].find(role => user.roles?.includes(role));
-				switch (error?.error) {
-					case availabilityErrors.NOT_CONFIGURED:
-						return handleErrors(isAdmin, availabilityErrors.NOT_CONFIGURED);
-					case availabilityErrors.NOT_ACTIVE:
-						return handleErrors(isAdmin, availabilityErrors.NOT_ACTIVE);
-					case availabilityErrors.NO_APP:
-						return handleErrors(isAdmin, availabilityErrors.NO_APP);
-					default:
-						return handleErrors(isAdmin, availabilityErrors.NOT_CONFIGURED);
-				}
+				const isAdmin = !!user.roles?.includes('admin');
+				handleErrors(isAdmin, error?.error || 'NOT_CONFIGURED');
+				return false;
 			}
 		}
 		return true;
 	};
 
 	const showInitCallActionSheet = async () => {
-		const canInit = await canInitAnCall();
-		if (canInit) {
-			showActionSheet({
-				children: <StartACallActionSheet rid={rid} />,
-				snaps
-			});
-			if (!permission?.granted) {
-				requestPermission();
-				handleAndroidBltPermission();
+		try {
+			const canInit = await canInitAnCall();
+			if (canInit) {
+				showActionSheet({
+					children: <StartACallActionSheet rid={rid} />,
+					snaps: [480]
+				});
+
+				if (!permission?.granted) {
+					requestPermission();
+					handleAndroidBltPermission();
+				}
 			}
+		} catch (error) {
+			log(error);
 		}
 	};
 
-	useEffect(() => {
-		handleShowCallOption();
-	}, []);
-
-	return { showInitCallActionSheet, showCallOption };
+	return { showInitCallActionSheet, callEnabled, disabledTooltip };
 };

@@ -27,6 +27,7 @@ import AutoTranslateView from '../../views/AutoTranslateView';
 import DirectoryView from '../../views/DirectoryView';
 import NotificationPrefView from '../../views/NotificationPreferencesView';
 import ForwardLivechatView from '../../views/ForwardLivechatView';
+import ForwardMessageView from '../../views/ForwardMessageView';
 import CloseLivechatView from '../../views/CloseLivechatView';
 import CannedResponsesListView from '../../views/CannedResponsesListView';
 import CannedResponseDetail from '../../views/CannedResponseDetail';
@@ -49,6 +50,7 @@ import CreateChannelView from '../../views/CreateChannelView';
 import UserPreferencesView from '../../views/UserPreferencesView';
 import UserNotificationPrefView from '../../views/UserNotificationPreferencesView';
 import SecurityPrivacyView from '../../views/SecurityPrivacyView';
+import MediaAutoDownloadView from '../../views/MediaAutoDownloadView';
 import E2EEncryptionSecurityView from '../../views/E2EEncryptionSecurityView';
 // InsideStackNavigator
 import AttachmentView from '../../views/AttachmentView';
@@ -114,10 +116,9 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 			>
 				<ModalStack.Screen name='RoomActionsView' component={RoomActionsView} />
 				{/* @ts-ignore */}
-				<ModalStack.Screen name='RoomInfoView' component={RoomInfoView} options={RoomInfoView.navigationOptions} />
+				<ModalStack.Screen name='RoomInfoView' component={RoomInfoView} />
 				{/* @ts-ignore */}
 				<ModalStack.Screen name='SelectListView' component={SelectListView} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='RoomInfoEditView' component={RoomInfoEditView} options={RoomInfoEditView.navigationOptions} />
 				<ModalStack.Screen name='ChangeAvatarView' component={ChangeAvatarView} />
 				<ModalStack.Screen name='RoomMembersView' component={RoomMembersView} />
@@ -127,7 +128,6 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 					options={SearchMessagesView.navigationOptions}
 				/>
 				<ModalStack.Screen name='SelectedUsersView' component={SelectedUsersView} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='InviteUsersView' component={InviteUsersView} />
 				<ModalStack.Screen name='AddChannelTeamView' component={AddChannelTeamView} />
 				<ModalStack.Screen name='AddExistingChannelView' component={AddExistingChannelView} />
@@ -141,26 +141,21 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 				/>
 				<ModalStack.Screen name='QueueListView' component={QueueListView} />
 				<ModalStack.Screen name='NotificationPrefView' component={NotificationPrefView} />
+				<ModalStack.Screen name='ForwardMessageView' component={ForwardMessageView} />
 				{/* @ts-ignore */}
 				<ModalStack.Screen name='ForwardLivechatView' component={ForwardLivechatView} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='CloseLivechatView' component={CloseLivechatView} />
 				<ModalStack.Screen name='CannedResponsesListView' component={CannedResponsesListView} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='CannedResponseDetail' component={CannedResponseDetail} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='LivechatEditView' component={LivechatEditView} options={LivechatEditView.navigationOptions} />
 				<ModalStack.Screen name='PickerView' component={PickerView} />
 				{/* @ts-ignore */}
 				<ModalStack.Screen name='ThreadMessagesView' component={ThreadMessagesView} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='DiscussionsView' component={DiscussionsView} />
 				<ModalStack.Screen name='TeamChannelsView' component={TeamChannelsView} options={TeamChannelsView.navigationOptions} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='MarkdownTableView' component={MarkdownTableView} />
 				<ModalStack.Screen
 					name='ReadReceiptsView'
-					// @ts-ignore
 					component={ReadReceiptsView}
 					options={props => ReadReceiptsView.navigationOptions!({ ...props, isMasterDetail: true })}
 				/>
@@ -180,7 +175,6 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 				<ModalStack.Screen name='NewMessageView' component={NewMessageView} />
 				<ModalStack.Screen name='SelectedUsersViewCreateChannel' component={SelectedUsersView} />
 				<ModalStack.Screen name='CreateChannelView' component={CreateChannelView} />
-				{/* @ts-ignore */}
 				<ModalStack.Screen name='CreateDiscussionView' component={CreateDiscussionView} />
 				<ModalStack.Screen name='E2ESaveYourPasswordView' component={E2ESaveYourPasswordView} />
 				<ModalStack.Screen name='E2EHowItWorksView' component={E2EHowItWorksView} />
@@ -188,6 +182,7 @@ const ModalStackNavigator = React.memo(({ navigation }: INavigation) => {
 				<ModalStack.Screen name='UserPreferencesView' component={UserPreferencesView} />
 				<ModalStack.Screen name='UserNotificationPrefView' component={UserNotificationPrefView} />
 				<ModalStack.Screen name='SecurityPrivacyView' component={SecurityPrivacyView} />
+				<ModalStack.Screen name='MediaAutoDownloadView' component={MediaAutoDownloadView} />
 				<ModalStack.Screen name='E2EEncryptionSecurityView' component={E2EEncryptionSecurityView} />
 			</ModalStack.Navigator>
 		</ModalContainer>
@@ -212,11 +207,9 @@ const InsideStackNavigator = React.memo(() => {
 			<InsideStack.Screen name='DrawerNavigator' component={DrawerNavigator} options={{ headerShown: false }} />
 			<InsideStack.Screen name='ModalStackNavigator' component={ModalStackNavigator} options={{ headerShown: false }} />
 			<InsideStack.Screen name='AttachmentView' component={AttachmentView} />
-			{/* @ts-ignore */}
 			<InsideStack.Screen name='ModalBlockView' component={ModalBlockView} options={ModalBlockView.navigationOptions} />
 			<InsideStack.Screen
 				name='JitsiMeetView'
-				// @ts-ignore
 				component={JitsiMeetView}
 				options={{ headerShown: false, animationEnabled: isIOS }}
 			/>

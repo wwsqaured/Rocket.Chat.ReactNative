@@ -213,7 +213,6 @@ const createOrUpdateSubscription = async (subscription: ISubscription, room: ISe
 			if (messageRecord) {
 				batch.push(
 					messageRecord.prepareUpdate(() => {
-						// @ts-ignore
 						Object.assign(messageRecord, lastMessage);
 					})
 				);
@@ -255,6 +254,8 @@ const debouncedUpdate = (subscription: ISubscription) => {
 					if (batch[key]) {
 						if (/SUB/.test(key)) {
 							const sub = batch[key] as ISubscription;
+							// When calling the api subscriptions.read passing readThreads as true it does not return this prop
+							if (!sub.tunread) sub.tunread = [];
 							const roomQueueId = getRoomQueueId(sub.rid);
 							const room = batch[roomQueueId] as IRoom;
 							delete batch[roomQueueId];
@@ -308,6 +309,12 @@ export default function subscribeRooms() {
 			}
 			if (unset?.avatarETag) {
 				store.dispatch(setUser({ avatarETag: '' }));
+			}
+			if (diff?.bio) {
+				store.dispatch(setUser({ bio: diff.bio }));
+			}
+			if (diff?.nickname) {
+				store.dispatch(setUser({ nickname: diff.nickname }));
 			}
 		}
 		if (/subscriptions/.test(ev)) {

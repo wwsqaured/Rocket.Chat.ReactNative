@@ -2,7 +2,6 @@ import React from 'react';
 import { BackHandler, FlatList, Keyboard, NativeEventSubscription, RefreshControl, Text, View } from 'react-native';
 import { connect } from 'react-redux';
 import { dequal } from 'dequal';
-import Orientation from 'react-native-orientation-locker';
 import { Q } from '@nozbe/watermelondb';
 import { withSafeAreaInsets } from 'react-native-safe-area-context';
 import { Subscription } from 'rxjs';
@@ -42,7 +41,8 @@ import {
 	isRead,
 	debounce,
 	isIOS,
-	isTablet
+	isTablet,
+	compareServerVersion
 } from '../../lib/methods/helpers';
 import { E2E_BANNER_TYPE, DisplayMode, SortBy, MAX_SIDEBAR_WIDTH, themes } from '../../lib/constants';
 import { Services } from '../../lib/services';
@@ -89,6 +89,7 @@ interface IRoomsListViewProps {
 	createPublicChannelPermission: [];
 	createPrivateChannelPermission: [];
 	createDiscussionPermission: [];
+	serverVersion: string;
 }
 
 interface IRoomsListViewState {
@@ -159,6 +160,7 @@ const keyExtractor = (item: ISubscription, isSearching = false) => `${item.rid}-
 
 class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewState> {
 	private animated: boolean;
+	private mounted: boolean;
 	private count: number;
 	private unsubscribeFocus?: () => void;
 	private unsubscribeBlur?: () => void;
@@ -175,6 +177,7 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 		console.time(`${this.constructor.name} mount`);
 
 		this.animated = false;
+		this.mounted = false;
 		this.count = 0;
 		this.state = {
 			searching: false,
@@ -193,8 +196,9 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 	componentDidMount() {
 		const { navigation, dispatch } = this.props;
 		this.handleHasPermission();
+		this.mounted = true;
+
 		this.unsubscribeFocus = navigation.addListener('focus', () => {
-			Orientation.unlockAllOrientations();
 			this.animated = true;
 			// Check if there were changes with sort preference, then call getSubscription to remount the list
 			if (this.sortPreferencesChanged) {
@@ -490,9 +494,9 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 		const defaultWhereClause = [Q.where('archived', false), Q.where('open', true)] as (Q.WhereDescription | Q.SortBy)[];
 
 		if (sortBy === SortBy.Alphabetical) {
-			defaultWhereClause.push(Q.sortBy(`${this.useRealName ? 'fname' : 'name'}`, Q.asc));
+			defaultWhereClause.push(Q.experimentalSortBy(`${this.useRealName ? 'fname' : 'name'}`, Q.asc));
 		} else {
-			defaultWhereClause.push(Q.sortBy('room_updated_at', Q.desc));
+			defaultWhereClause.push(Q.experimentalSortBy('room_updated_at', Q.desc));
 		}
 
 		// When we're grouping by something
@@ -500,13 +504,13 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 			observable = await db
 				.get('subscriptions')
 				.query(...defaultWhereClause)
-				.observeWithColumns(['alert', 'on_hold']);
+				.observeWithColumns(['alert', 'on_hold', 'f']);
 			// When we're NOT grouping
 		} else {
 			this.count += QUERY_SIZE;
 			observable = await db
 				.get('subscriptions')
-				.query(...defaultWhereClause, Q.skip(0), Q.take(this.count))
+				.query(...defaultWhereClause, Q.experimentalSkip(0), Q.experimentalTake(this.count))
 				.observeWithColumns(['on_hold']);
 		}
 
@@ -679,9 +683,11 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 
 	toggleRead = async (rid: string, tIsRead: boolean) => {
 		logEvent(tIsRead ? events.RL_UNREAD_CHANNEL : events.RL_READ_CHANNEL);
+		const { serverVersion } = this.props;
 		try {
 			const db = database.active;
-			const result = await Services.toggleRead(tIsRead, rid);
+			const includeThreads = compareServerVersion(serverVersion, 'greaterThanOrEqualTo', '5.4.0');
+			const result = await Services.toggleReadStatus(tIsRead, rid, includeThreads);
 
 			if (result.success) {
 				const subCollection = db.get('subscriptions');
@@ -691,6 +697,9 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 						await subRecord.update(sub => {
 							sub.alert = tIsRead;
 							sub.unread = 0;
+							if (includeThreads) {
+								sub.tunread = [];
+							}
 						});
 					} catch (e) {
 						log(e);
@@ -850,7 +859,7 @@ class RoomsListView extends React.Component<IRoomsListViewProps, IRoomsListViewS
 			showAvatar,
 			displayMode
 		} = this.props;
-		const id = getUidDirectMessage(item);
+		const id = item.search && item.t === 'd' ? item._id : getUidDirectMessage(item);
 		const swipeEnabled = this.isSwipeEnabled(item);
 
 		return (
@@ -962,7 +971,8 @@ const mapStateToProps = (state: IApplicationState) => ({
 	createDirectMessagePermission: state.permissions['create-d'],
 	createPublicChannelPermission: state.permissions['create-c'],
 	createPrivateChannelPermission: state.permissions['create-p'],
-	createDiscussionPermission: state.permissions['start-discussion']
+	createDiscussionPermission: state.permissions['start-discussion'],
+	serverVersion: state.server.version
 });
 
 export default connect(mapStateToProps)(withDimensions(withTheme(withSafeAreaInsets(RoomsListView))));

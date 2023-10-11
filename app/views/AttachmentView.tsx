@@ -2,14 +2,13 @@ import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { HeaderBackground, useHeaderHeight } from '@react-navigation/elements';
 import { StackNavigationOptions } from '@react-navigation/stack';
 import { ResizeMode, Video } from 'expo-av';
-import { sha256 } from 'js-sha256';
 import React from 'react';
-import { PermissionsAndroid, View, useWindowDimensions } from 'react-native';
-import * as mime from 'react-native-mime-types';
+import { PermissionsAndroid, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { shallowEqual } from 'react-redux';
 import RNFetchBlob from 'rn-fetch-blob';
 
+import { isImageBase64 } from '../lib/methods';
 import RCActivityIndicator from '../containers/ActivityIndicator';
 import * as HeaderButton from '../containers/HeaderButton';
 import { ImageViewer } from '../containers/ImageViewer';
@@ -24,6 +23,7 @@ import EventEmitter from '../lib/methods/helpers/events';
 import { getUserSelector } from '../selectors/login';
 import { TNavigation } from '../stacks/stackType';
 import { useTheme } from '../theme';
+import { LOCAL_DOCUMENT_DIRECTORY, getFilename } from '../lib/methods/handleMediaDownload';
 
 const RenderContent = ({
 	setLoading,
@@ -110,6 +110,7 @@ const AttachmentView = (): React.ReactElement => {
 
 	const setHeader = () => {
 		let { title } = attachment;
+
 		try {
 			if (title) {
 				title = decodeURI(title);
@@ -129,7 +130,7 @@ const AttachmentView = (): React.ReactElement => {
 				<HeaderButton.CloseModal testID='close-attachment-view' navigation={navigation} color={colors.previewTintColor} />
 			),
 			headerRight: () =>
-				Allow_Save_Media_to_Gallery ? (
+				Allow_Save_Media_to_Gallery && !isImageBase64(attachment.image_url) ? (
 					<HeaderButton.Download testID='save-image' onPress={handleSave} color={colors.previewTintColor} />
 				) : null,
 			headerBackground: () => (
@@ -145,13 +146,13 @@ const AttachmentView = (): React.ReactElement => {
 
 	const handleSave = async () => {
 		const { title_link, image_url, image_type, video_url, video_type } = attachment;
-		const url = title_link || image_url || video_url;
+		// When the attachment is a video, the video_url refers to local file and the title_link to the link
+		const url = video_url || title_link || image_url;
 
 		if (!url) {
 			return;
 		}
 
-		const mediaAttachment = formatAttachmentUrl(url, user.id, user.token, baseUrl);
 		if (isAndroid) {
 			const rationale = {
 				title: I18n.t('Write_External_Permission'),
@@ -166,16 +167,22 @@ const AttachmentView = (): React.ReactElement => {
 
 		setLoading(true);
 		try {
-			const extension = image_url
-				? `.${mime.extension(image_type) || 'jpg'}`
-				: `.${(video_type === 'video/quicktime' && 'mov') || mime.extension(video_type) || 'mp4'}`;
-			// The return of mime.extension('video/quicktime') is .qt,
-			// this format the iOS isn't recognize and can't save on gallery
-			const documentDir = `${RNFetchBlob.fs.dirs.DocumentDir}/`;
-			const path = `${documentDir + sha256(url) + extension}`;
-			const file = await RNFetchBlob.config({ path }).fetch('GET', mediaAttachment);
-			await CameraRoll.save(path, { album: 'Rocket.Chat' });
-			file.flush();
+			if (LOCAL_DOCUMENT_DIRECTORY && url.startsWith(LOCAL_DOCUMENT_DIRECTORY)) {
+				await CameraRoll.save(url, { album: 'Rocket.Chat' });
+			} else {
+				const mediaAttachment = formatAttachmentUrl(url, user.id, user.token, baseUrl);
+				let filename = '';
+				if (image_url) {
+					filename = getFilename({ title: attachment.title, type: 'image', mimeType: image_type, url });
+				} else {
+					filename = getFilename({ title: attachment.title, type: 'video', mimeType: video_type, url });
+				}
+				const documentDir = `${RNFetchBlob.fs.dirs.DocumentDir}/`;
+				const path = `${documentDir + filename}`;
+				const file = await RNFetchBlob.config({ path }).fetch('GET', mediaAttachment);
+				await CameraRoll.save(path, { album: 'Rocket.Chat' });
+				file.flush();
+			}
 			EventEmitter.emit(LISTENER, { message: I18n.t('saved_to_gallery') });
 		} catch (e) {
 			EventEmitter.emit(LISTENER, { message: I18n.t(image_url ? 'error-save-image' : 'error-save-video') });
