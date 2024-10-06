@@ -7,6 +7,8 @@ import { StackNavigationOptions } from '@react-navigation/stack';
 import { HeaderBackButton } from '@react-navigation/elements';
 import { Observable, Subscription } from 'rxjs';
 
+import { showActionSheetRef } from '../../containers/ActionSheet';
+import { CustomIcon } from '../../containers/CustomIcon';
 import ActivityIndicator from '../../containers/ActivityIndicator';
 import I18n from '../../i18n';
 import database from '../../lib/database';
@@ -28,15 +30,15 @@ import { LISTENER } from '../../containers/Toast';
 import SearchHeader from '../../containers/SearchHeader';
 import { ChatsStackParamList } from '../../stacks/types';
 import { Filter } from './filters';
-import DropdownItemHeader from './Dropdown/DropdownItemHeader';
-import Dropdown from './Dropdown';
 import Item from './Item';
 import styles from './styles';
 import { IApplicationState, IBaseScreen, IMessage, SubscriptionType, TSubscriptionModel, TThreadModel } from '../../definitions';
 import { getUidDirectMessage, debounce, isIOS } from '../../lib/methods/helpers';
 import { Services } from '../../lib/services';
+import UserPreferences from '../../lib/methods/userPreferences';
 
 const API_FETCH_COUNT = 50;
+const THREADS_FILTER = 'threadsFilter';
 
 interface IThreadMessagesViewState {
 	loading: boolean;
@@ -44,10 +46,10 @@ interface IThreadMessagesViewState {
 	messages: any[];
 	displayingThreads: TThreadModel[];
 	subscription: TSubscriptionModel;
-	showFilterDropdown: boolean;
 	currentFilter: Filter;
 	isSearching: boolean;
 	searchText: string;
+	offset: number;
 }
 
 interface IThreadMessagesViewProps extends IBaseScreen<ChatsStackParamList, 'ThreadMessagesView'> {
@@ -63,8 +65,6 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 
 	private rid: string;
 
-	private t: string;
-
 	private subSubscription?: Subscription;
 
 	private messagesSubscription?: Subscription;
@@ -75,17 +75,16 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 		super(props);
 		this.mounted = false;
 		this.rid = props.route.params?.rid;
-		this.t = props.route.params?.t;
 		this.state = {
 			loading: false,
 			end: false,
 			messages: [],
 			displayingThreads: [],
 			subscription: {} as TSubscriptionModel,
-			showFilterDropdown: false,
 			currentFilter: Filter.All,
 			isSearching: false,
-			searchText: ''
+			searchText: '',
+			offset: 0
 		};
 		this.setHeader();
 		this.initSubscription();
@@ -131,17 +130,19 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 		const options: StackNavigationOptions = {
 			headerTitleAlign: 'center',
 			headerTitle: I18n.t('Threads'),
+			headerTitleContainerStyle: {},
 			headerRightContainerStyle: { flexGrow: 1 },
 			headerLeft: () => (
 				<HeaderBackButton
 					labelVisible={false}
 					onPress={() => navigation.pop()}
-					tintColor={themes[theme].headerTintColor}
+					tintColor={themes[theme].fontSecondaryInfo}
 					testID='header-back'
 				/>
 			),
 			headerRight: () => (
 				<HeaderButton.Container>
+					<HeaderButton.Item iconName='filter' onPress={this.showFilters} />
 					<HeaderButton.Item iconName='search' onPress={this.onSearchPress} testID='thread-messages-view-search-icon' />
 				</HeaderButton.Container>
 			)
@@ -185,7 +186,7 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 				this.messagesSubscription.unsubscribe();
 			}
 
-			const whereClause = [Q.where('rid', this.rid), Q.experimentalSortBy('tlm', Q.desc)];
+			const whereClause = [Q.where('rid', this.rid), Q.sortBy('tlm', Q.desc)];
 
 			if (searchText?.trim()) {
 				whereClause.push(Q.where('msg', Q.like(`%${sanitizeLikeString(searchText.trim())}%`)));
@@ -213,8 +214,18 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 		}
 	};
 
-	init = () => {
+	initFilter = () =>
+		new Promise<void>(resolve => {
+			const savedFilter = UserPreferences.getString(THREADS_FILTER);
+			if (savedFilter) {
+				this.setState({ currentFilter: savedFilter as Filter }, () => resolve());
+			}
+			resolve();
+		});
+
+	init = async () => {
 		const { subscription } = this.state;
+		await this.initFilter();
 		if (!subscription) {
 			return this.load();
 		}
@@ -307,7 +318,7 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 
 	// eslint-disable-next-line react/sort-comp
 	load = debounce(async (lastThreadSync: Date) => {
-		const { loading, end, messages, searchText } = this.state;
+		const { loading, end, searchText, offset } = this.state;
 		if (end || loading || !this.mounted) {
 			return;
 		}
@@ -318,14 +329,15 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 			const result = await Services.getThreadsList({
 				rid: this.rid,
 				count: API_FETCH_COUNT,
-				offset: messages.length,
+				offset,
 				text: searchText
 			});
 			if (result.success) {
 				this.updateThreads({ update: result.threads, lastThreadSync });
 				this.setState({
 					loading: false,
-					end: result.count < API_FETCH_COUNT
+					end: result.count < API_FETCH_COUNT,
+					offset: offset + API_FETCH_COUNT
 				});
 			}
 		} catch (e) {
@@ -410,21 +422,34 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 		return messages;
 	};
 
-	// method to update state with filtered threads
-	filterThreads = () => {
-		const { messages, subscription } = this.state;
-		const displayingThreads = this.getFilteredThreads(messages, subscription);
-		this.setState({ displayingThreads });
+	showFilters = () => {
+		const { currentFilter } = this.state;
+		showActionSheetRef({
+			options: [
+				{
+					title: I18n.t(Filter.All),
+					right: currentFilter === Filter.All ? () => <CustomIcon name='check' size={24} /> : undefined,
+					onPress: () => this.onFilterSelected(Filter.All)
+				},
+				{
+					title: I18n.t(Filter.Following),
+					right: currentFilter === Filter.Following ? () => <CustomIcon name='check' size={24} /> : undefined,
+					onPress: () => this.onFilterSelected(Filter.Following)
+				},
+				{
+					title: I18n.t(Filter.Unread),
+					right: currentFilter === Filter.Unread ? () => <CustomIcon name='check' size={24} /> : undefined,
+					onPress: () => this.onFilterSelected(Filter.Unread)
+				}
+			]
+		});
 	};
-
-	showFilterDropdown = () => this.setState({ showFilterDropdown: true });
-
-	closeFilterDropdown = () => this.setState({ showFilterDropdown: false });
 
 	onFilterSelected = (filter: Filter) => {
 		const { messages, subscription } = this.state;
 		const displayingThreads = this.getFilteredThreads(messages, subscription, filter);
 		this.setState({ currentFilter: filter, displayingThreads });
+		UserPreferences.setString(THREADS_FILTER, filter);
 	};
 
 	toggleFollowThread = async (isFollowingThread: boolean, tmid: string) => {
@@ -454,20 +479,6 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 		);
 	};
 
-	renderHeader = () => {
-		const { messages, currentFilter } = this.state;
-		if (!messages.length) {
-			return null;
-		}
-
-		return (
-			<>
-				<DropdownItemHeader currentFilter={currentFilter} onPress={this.showFilterDropdown} />
-				<List.Separator />
-			</>
-		);
-	};
-
 	renderContent = () => {
 		const { loading, messages, displayingThreads, currentFilter } = this.state;
 		const { theme } = this.props;
@@ -480,12 +491,7 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 			} else {
 				text = I18n.t('No_threads');
 			}
-			return (
-				<>
-					{this.renderHeader()}
-					<BackgroundContainer text={text} />
-				</>
-			);
+			return <BackgroundContainer text={text} />;
 		}
 
 		return (
@@ -493,7 +499,7 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 				data={displayingThreads}
 				extraData={this.state}
 				renderItem={this.renderItem}
-				style={[styles.list, { backgroundColor: themes[theme].backgroundColor }]}
+				style={[styles.list, { backgroundColor: themes[theme].surfaceRoom }]}
 				contentContainerStyle={styles.contentContainer}
 				onEndReached={this.load}
 				onEndReachedThreshold={0.5}
@@ -502,7 +508,6 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 				initialNumToRender={7}
 				removeClippedSubviews={isIOS}
 				ItemSeparatorComponent={List.Separator}
-				ListHeaderComponent={this.renderHeader}
 				ListFooterComponent={loading ? <ActivityIndicator /> : null}
 				scrollIndicatorInsets={{ right: 1 }} // https://github.com/facebook/react-native/issues/26610#issuecomment-539843444
 			/>
@@ -511,21 +516,10 @@ class ThreadMessagesView extends React.Component<IThreadMessagesViewProps, IThre
 
 	render() {
 		console.count(`${this.constructor.name}.render calls`);
-		const { showFilterDropdown, currentFilter } = this.state;
-		const { theme } = this.props;
-
 		return (
 			<SafeAreaView testID='thread-messages-view'>
 				<StatusBar />
 				{this.renderContent()}
-				{showFilterDropdown ? (
-					<Dropdown
-						currentFilter={currentFilter}
-						onFilterSelected={this.onFilterSelected}
-						onClose={this.closeFilterDropdown}
-						theme={theme}
-					/>
-				) : null}
 			</SafeAreaView>
 		);
 	}

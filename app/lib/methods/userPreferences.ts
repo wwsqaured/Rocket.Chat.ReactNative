@@ -3,7 +3,7 @@ import { create, MMKVLoader, MMKVInstance, ProcessingModes, IOSAccessibleStates 
 const MMKV = new MMKVLoader()
 	// MODES.MULTI_PROCESS = ACCESSIBLE BY APP GROUP (iOS)
 	.setProcessingMode(ProcessingModes.MULTI_PROCESS)
-	.setAccessibleIOS(IOSAccessibleStates.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY)
+	.setAccessibleIOS(IOSAccessibleStates.AFTER_FIRST_UNLOCK)
 	.withEncryption()
 	.initialize();
 
@@ -29,7 +29,6 @@ class UserPreferences {
 
 	getBool(key: string): boolean | null {
 		try {
-			console.log(this.mmkv.getBool(key));
 			return this.mmkv.getBool(key) ?? null;
 		} catch {
 			return null;

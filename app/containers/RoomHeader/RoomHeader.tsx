@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import I18n from '../../i18n';
@@ -74,6 +74,7 @@ interface IRoomHeader {
 	onPress: Function;
 	testID?: string;
 	sourceType?: IOmnichannelSource;
+	disabled?: boolean;
 }
 
 const SubTitle = React.memo(({ usersTyping, subtitle, renderFunc, scale }: TRoomHeaderSubTitle) => {
@@ -88,7 +89,7 @@ const SubTitle = React.memo(({ usersTyping, subtitle, renderFunc, scale }: TRoom
 			usersText = usersTyping.join(', ');
 		}
 		return (
-			<Text style={[styles.subtitle, { fontSize, color: colors.auxiliaryText }]} numberOfLines={1}>
+			<Text style={[styles.subtitle, { fontSize, color: colors.fontSecondaryInfo }]} numberOfLines={1}>
 				<Text style={styles.typingUsers}>{usersText} </Text>
 				{usersTyping.length > 1 ? I18n.t('are_typing') : I18n.t('is_typing')}...
 			</Text>
@@ -102,7 +103,7 @@ const SubTitle = React.memo(({ usersTyping, subtitle, renderFunc, scale }: TRoom
 
 	// subtitle
 	if (subtitle) {
-		return <MarkdownPreview msg={subtitle} style={[styles.subtitle, { fontSize, color: colors.auxiliaryText }]} />;
+		return <MarkdownPreview msg={subtitle} style={[styles.subtitle, { fontSize, color: colors.fontSecondaryInfo }]} />;
 	}
 
 	return null;
@@ -110,7 +111,7 @@ const SubTitle = React.memo(({ usersTyping, subtitle, renderFunc, scale }: TRoom
 
 const HeaderTitle = React.memo(({ title, tmid, prid, scale, testID }: TRoomHeaderHeaderTitle) => {
 	const { colors } = useTheme();
-	const titleStyle = { fontSize: TITLE_SIZE * scale, color: colors.headerTitleColor };
+	const titleStyle = { fontSize: TITLE_SIZE * scale, color: colors.fontTitlesLabels };
 	if (!tmid && !prid) {
 		return (
 			<Text style={[styles.title, titleStyle]} numberOfLines={1} testID={testID}>
@@ -139,7 +140,8 @@ const Header = React.memo(
 		teamMain,
 		testID,
 		usersTyping = [],
-		sourceType
+		sourceType,
+		disabled
 	}: IRoomHeader) => {
 		const { colors } = useTheme();
 		const portrait = height > width;
@@ -163,7 +165,7 @@ const Header = React.memo(
 						status={status}
 						teamMain={teamMain}
 					/>
-					<Text style={[styles.subtitle, { color: colors.auxiliaryText }]} numberOfLines={1}>
+					<Text style={[styles.subtitle, { color: colors.fontSecondaryInfo }]} numberOfLines={1}>
 						{parentTitle}
 					</Text>
 				</View>
@@ -172,15 +174,27 @@ const Header = React.memo(
 
 		const handleOnPress = useCallback(() => onPress(), []);
 
+		const accessibilityLabel = useMemo(() => {
+			if (tmid) {
+				return `${title} ${parentTitle}`;
+			}
+			return title;
+		}, [title, parentTitle, tmid]);
+
 		return (
 			<TouchableOpacity
 				testID='room-header'
-				accessibilityLabel={title}
+				accessibilityLabel={accessibilityLabel}
 				onPress={handleOnPress}
-				style={styles.container}
-				disabled={!!tmid}
+				style={[
+					styles.container,
+					{
+						opacity: disabled ? 0.5 : 1
+					}
+				]}
+				disabled={disabled}
 				hitSlop={HIT_SLOP}
-			>
+				accessibilityRole='header'>
 				<View style={styles.titleContainer}>
 					{tmid ? null : (
 						<RoomTypeIcon

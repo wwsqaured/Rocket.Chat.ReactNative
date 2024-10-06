@@ -1,5 +1,4 @@
 import React from 'react';
-import { Switch } from 'react-native';
 import { connect } from 'react-redux';
 import { StackNavigationOptions } from '@react-navigation/stack';
 import { Subscription } from 'rxjs';
@@ -10,11 +9,12 @@ import StatusBar from '../containers/StatusBar';
 import * as List from '../containers/List';
 import database from '../lib/database';
 import { changePasscode, checkHasPasscode, supportedBiometryLabel } from '../lib/methods/helpers/localAuthentication';
-import { BIOMETRY_ENABLED_KEY, DEFAULT_AUTO_LOCK, themes, SWITCH_TRACK_COLOR } from '../lib/constants';
+import { BIOMETRY_ENABLED_KEY, DEFAULT_AUTO_LOCK, themes } from '../lib/constants';
 import SafeAreaView from '../containers/SafeAreaView';
 import { events, logEvent } from '../lib/methods/helpers/log';
 import userPreferences from '../lib/methods/userPreferences';
 import { IApplicationState, TServerModel } from '../definitions';
+import Switch from '../containers/Switch';
 
 const DEFAULT_BIOMETRY = false;
 
@@ -172,7 +172,7 @@ class ScreenLockConfigView extends React.Component<IScreenLockConfigViewProps, I
 
 	renderIcon = () => {
 		const { theme } = this.props;
-		return <List.Icon name='check' color={themes[theme].tintColor} />;
+		return <List.Icon name='check' color={themes[theme].badgeBackgroundLevel2} />;
 	};
 
 	renderItem = ({ item }: { item: IItem }) => {
@@ -185,6 +185,8 @@ class ScreenLockConfigView extends React.Component<IScreenLockConfigViewProps, I
 					right={() => (this.isSelected(value) ? this.renderIcon() : null)}
 					disabled={disabled}
 					translateTitle={false}
+					additionalAcessibilityLabel={this.isSelected(value)}
+					additionalAcessibilityLabelCheck
 				/>
 				<List.Separator />
 			</>
@@ -194,14 +196,12 @@ class ScreenLockConfigView extends React.Component<IScreenLockConfigViewProps, I
 	renderAutoLockSwitch = () => {
 		const { autoLock } = this.state;
 		const { Force_Screen_Lock } = this.props;
-		return (
-			<Switch value={autoLock} trackColor={SWITCH_TRACK_COLOR} onValueChange={this.toggleAutoLock} disabled={Force_Screen_Lock} />
-		);
+		return <Switch value={autoLock} onValueChange={this.toggleAutoLock} disabled={Force_Screen_Lock} />;
 	};
 
 	renderBiometrySwitch = () => {
 		const { biometry } = this.state;
-		return <Switch value={biometry} trackColor={SWITCH_TRACK_COLOR} onValueChange={this.toggleBiometry} />;
+		return <Switch value={biometry} onValueChange={this.toggleBiometry} />;
 	};
 
 	renderAutoLockItems = () => {
@@ -246,6 +246,7 @@ class ScreenLockConfigView extends React.Component<IScreenLockConfigViewProps, I
 					title={I18n.t('Local_authentication_unlock_with_label', { label: biometryLabel })}
 					right={() => this.renderBiometrySwitch()}
 					translateTitle={false}
+					additionalAcessibilityLabel={this.state.biometry ? I18n.t('Enabled') : I18n.t('Disabled')}
 				/>
 				<List.Separator />
 			</List.Section>
@@ -260,7 +261,11 @@ class ScreenLockConfigView extends React.Component<IScreenLockConfigViewProps, I
 				<List.Container>
 					<List.Section>
 						<List.Separator />
-						<List.Item title='Local_authentication_unlock_option' right={() => this.renderAutoLockSwitch()} />
+						<List.Item
+							title='Local_authentication_unlock_option'
+							right={() => this.renderAutoLockSwitch()}
+							additionalAcessibilityLabel={autoLock}
+						/>
 						{autoLock ? (
 							<>
 								<List.Separator />
